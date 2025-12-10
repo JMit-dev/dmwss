@@ -1,0 +1,18 @@
+[submodule "modules/glfw"]
+	path = modules/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "modules/miniaudio"]
+	path = modules/miniaudio
+	url = https://github.com/mackron/miniaudio.git
+[submodule "modules/glad"]
+	path = modules/glad
+	url = https://github.com/Dav1dde/glad.git
+[submodule "modules/nlohmann-json"]
+	path = modules/nlohmann-json
+	url = https://github.com/nlohmann/json.git
+[submodule "modules/fmt"]
+	path = modules/fmt
+	url = https://github.com/fmtlib/fmt.git
+[submodule "modules/spdlog"]
+	path = modules/spdlog
+	url = https://github.com/gabime/spdlog.git
