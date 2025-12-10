@@ -23,8 +23,9 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(modules/glfw)
 
-# GLAD
-add_subdirectory(modules/glad)
+# GLAD - We'll use Qt's OpenGL functions instead for now
+# Since we're using Qt OpenGLWidgets, we don't need GLAD immediately
+# TODO: Add proper GLAD integration later if needed
 
 # fmt library
 add_subdirectory(modules/fmt)
@@ -56,10 +57,12 @@ target_link_libraries(dmwss PRIVATE
     Qt6::Widgets
     Qt6::OpenGLWidgets
     glfw
-    glad
     fmt::fmt
     spdlog::spdlog
     nlohmann_json::nlohmann_json
+    pcre2-16
+    icuuc
+    icui18n
 )
 
 # Copy shaders to build directory
