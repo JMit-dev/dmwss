@@ -17,6 +17,11 @@ endif()
 # Find Qt6
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGLWidgets)
 
+# Enable Qt MOC
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
 # GLFW
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
