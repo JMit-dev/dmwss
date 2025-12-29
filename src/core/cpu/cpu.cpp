@@ -31,14 +31,23 @@ void CPU::Reset() {
 u32 CPU::Step() {
     m_cycles = 0;
 
-    // Handle interrupts
-    ServiceInterrupts();
-
-    // If halted, don't execute instructions
+    // Check if we should wake from HALT
+    // HALT wakes up when any interrupt is pending (IE & IF != 0), regardless of IME
     if (m_halted) {
-        m_cycles = 4;  // HALT consumes cycles
-        return m_cycles;
+        u8 if_reg = m_memory.Read(0xFF0F);
+        u8 ie_reg = m_memory.Read(0xFFFF);
+        if ((if_reg & ie_reg) != 0) {
+            m_halted = false;
+            spdlog::trace("Waking from HALT, IF={:02X} IE={:02X}", if_reg, ie_reg);
+        } else {
+            // Still halted, consume cycles and return
+            m_cycles = 4;
+            return m_cycles;
+        }
     }
+
+    // Handle interrupts (only if IME is set)
+    ServiceInterrupts();
 
     // Fetch and execute
     u8 opcode = FetchByte();
