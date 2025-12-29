@@ -60,10 +60,16 @@ target_link_libraries(dmwss PRIVATE
     fmt::fmt
     spdlog::spdlog
     nlohmann_json::nlohmann_json
-    pcre2-16
-    icuuc
-    icui18n
 )
+
+# Linux-specific Qt6 dependencies
+if(UNIX AND NOT APPLE)
+    target_link_libraries(dmwss PRIVATE
+        pcre2-16
+        icuuc
+        icui18n
+    )
+endif()
 
 # Copy shaders to build directory
 add_custom_command(TARGET dmwss POST_BUILD
