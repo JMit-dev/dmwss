@@ -44,7 +44,7 @@ public:
     static constexpr size_t PAGE_COUNT = 256;    // 64KB / 256 = 256 pages
 
     Memory();
-    ~Memory() = default;
+    ~Memory();
 
     // Read/Write operations (these use fastmem)
     u8 Read(u16 address) const;

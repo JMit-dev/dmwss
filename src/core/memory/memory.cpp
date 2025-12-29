@@ -9,6 +9,8 @@ Memory::Memory()
     Reset();
 }
 
+Memory::~Memory() = default;
+
 void Memory::Reset() {
     // Zero out all memory regions
     m_wram.fill(0);
@@ -60,7 +62,7 @@ void Memory::InitializePageTables() {
     spdlog::trace("Page tables initialized");
 }
 
-FORCE_INLINE u8 Memory::Read(u16 address) const {
+u8 Memory::Read(u16 address) const {
     const u8 page = address / PAGE_SIZE;
     const u8 offset = address % PAGE_SIZE;
     u8* page_ptr = m_read_page_table[page];
@@ -111,7 +113,7 @@ FORCE_INLINE u8 Memory::Read(u16 address) const {
     return 0xFF;
 }
 
-FORCE_INLINE void Memory::Write(u16 address, u8 value) {
+void Memory::Write(u16 address, u8 value) {
     const u8 page = address / PAGE_SIZE;
     const u8 offset = address % PAGE_SIZE;
     u8* page_ptr = m_write_page_table[page];
