@@ -73,6 +73,9 @@ public:
     // Register I/O handlers (public so PPU/APU can register)
     void RegisterIOHandler(u16 address, IOReadHandler read_handler, IOWriteHandler write_handler);
 
+    // Request interrupt (sets bit in IF register)
+    void RequestInterrupt(u8 interrupt_bit);
+
 private:
     // Memory regions (SIMD-aligned for performance)
     ALIGN(64) std::array<u8, WRAM_SIZE> m_wram;   // Work RAM

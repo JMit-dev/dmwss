@@ -237,3 +237,10 @@ void Memory::RegisterIOHandler(u16 address, IOReadHandler read_handler, IOWriteH
 
     spdlog::trace("Registered I/O handler for address 0x{:04X}", address);
 }
+
+void Memory::RequestInterrupt(u8 interrupt_bit) {
+    // Directly set the bit in IF register (0xFF0F)
+    // IF register is at offset 0x0F in the I/O region
+    m_io[0x0F] |= interrupt_bit;
+    spdlog::trace("Interrupt requested: bit 0x{:02X}, IF now 0x{:02X}", interrupt_bit, m_io[0x0F]);
+}
