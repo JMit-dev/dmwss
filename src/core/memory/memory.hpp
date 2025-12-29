@@ -66,6 +66,10 @@ public:
     // Reset memory
     void Reset();
 
+    // I/O register handler types
+    using IOReadHandler = std::function<u8(u16)>;
+    using IOWriteHandler = std::function<void(u16, u8)>;
+
     // Register I/O handlers (public so PPU/APU can register)
     void RegisterIOHandler(u16 address, IOReadHandler read_handler, IOWriteHandler write_handler);
 
@@ -94,13 +98,7 @@ private:
     u8 ReadIO(u16 address) const;
     void WriteIO(u16 address, u8 value);
 
-    // I/O register handlers
-    using IOReadHandler = std::function<u8(u16)>;
-    using IOWriteHandler = std::function<void(u16, u8)>;
-
+    // I/O register handler storage
     std::array<IOReadHandler, IO_SIZE> m_io_read_handlers;
     std::array<IOWriteHandler, IO_SIZE> m_io_write_handlers;
-
-    // Register I/O handlers
-    void RegisterIOHandler(u16 address, IOReadHandler read_handler, IOWriteHandler write_handler);
 };
