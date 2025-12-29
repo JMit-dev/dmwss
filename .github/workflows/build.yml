@@ -26,7 +26,7 @@ jobs:
       run: cmake --build build --config Release
 
     - name: Upload Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dmwss-linux
         path: build/dmwss
@@ -50,7 +50,7 @@ jobs:
       run: cmake --build build --config Release
 
     - name: Upload Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dmwss-windows
         path: build/Release/dmwss.exe
@@ -74,7 +74,7 @@ jobs:
       run: cmake --build build --config Release
 
     - name: Upload Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dmwss-macos
         path: build/dmwss
