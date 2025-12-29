@@ -384,7 +384,7 @@ void CPU::OP_RETI() {
 void CPU::OP_RST(u8 vector) {
     Push(m_regs.pc);
     m_regs.pc = vector;
-    m_cycles += 4;
+    m_cycles += 16;  // RST takes 4 M-cycles = 16 T-cycles
 }
 
 // ============================================================================
