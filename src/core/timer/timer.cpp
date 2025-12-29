@@ -103,7 +103,6 @@ void Timer::RegisterIOHandlers() {
             return m_tima;
         },
         [this](u16, u8 value) {
-            spdlog::info("TIMA write: 0x{:02X} -> 0x{:02X}, resetting counter (was {})", m_tima, value, m_timer_counter);
             m_tima = value;
             // Writing to TIMA resets the internal counter
             m_timer_counter = 0;
@@ -127,15 +126,11 @@ void Timer::RegisterIOHandlers() {
         },
         [this](u16, u8 value) {
             bool was_enabled = IsTimerEnabled();
-            u8 old_tac = m_tac;
             m_tac = value & 0x07;  // Only bottom 3 bits writable
-
-            spdlog::info("TAC write: 0x{:02X} -> 0x{:02X}, enabled: {} -> {}", old_tac, m_tac, was_enabled, IsTimerEnabled());
 
             // If timer state changed, reset the internal counter
             if (was_enabled != IsTimerEnabled()) {
                 m_timer_counter = 0;
-                spdlog::info("Timer enabled state changed, resetting counter");
             }
         }
     );

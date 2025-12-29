@@ -50,12 +50,20 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
     m_rom_data = rom_data;
 
     // Parse ROM header
-    std::string title(reinterpret_cast<const char*>(&m_rom_data[0x134]), 16);
+    std::string title;
+    for (int i = 0; i < 16; i++) {
+        char c = m_rom_data[0x134 + i];
+        if (c == 0) break;  // Null terminator
+        title += c;
+    }
+
     u8 cartridge_type = m_rom_data[0x147];
     u8 rom_size = m_rom_data[0x148];
     u8 ram_size = m_rom_data[0x149];
 
-    spdlog::info("ROM Title: {}", title.c_str());
+    if (!title.empty()) {
+        spdlog::info("ROM Title: {}", title);
+    }
     spdlog::info("Cartridge Type: 0x{:02X}", cartridge_type);
     spdlog::info("ROM Size: {} KB", (32 << rom_size));
     spdlog::info("RAM Size: 0x{:02X}", ram_size);
@@ -69,7 +77,6 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
     Reset();
     m_running = true;
 
-    spdlog::info("ROM loaded successfully");
     return true;
 }
 
