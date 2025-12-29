@@ -12,6 +12,7 @@ GameBoy::GameBoy()
     m_memory = std::make_unique<Memory>();
     m_cpu = std::make_unique<CPU>(*m_memory, *m_scheduler);
     m_ppu = std::make_unique<PPU>(*m_memory, *m_scheduler);
+    m_timer = std::make_unique<Timer>(*m_memory, *m_scheduler);
 
     RegisterIOHandlers();
 
@@ -82,6 +83,7 @@ void GameBoy::Reset() {
     m_memory->Reset();
     m_cpu->Reset();
     m_ppu->Reset();
+    m_timer->Reset();
 
     m_running = true;
 }
@@ -92,8 +94,9 @@ void GameBoy::Step() {
     // Execute one CPU instruction
     u32 cycles = m_cpu->Step();
 
-    // Update PPU
+    // Update PPU and Timer
     m_ppu->Step(cycles);
+    m_timer->Step(cycles);
 
     // Advance scheduler
     m_scheduler->Advance(cycles);
@@ -112,6 +115,7 @@ void GameBoy::RunFrame() {
         u32 cycles = m_cpu->Step();
 
         m_ppu->Step(cycles);
+        m_timer->Step(cycles);
         m_scheduler->Advance(cycles);
         m_scheduler->ProcessEvents();
 
