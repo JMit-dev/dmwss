@@ -17,7 +17,7 @@ jobs:
     - name: Install Qt6
       run: |
         sudo apt-get update
-        sudo apt-get install -y qt6-base-dev libgl1-mesa-dev libwayland-dev wayland-protocols libxkbcommon-dev
+        sudo apt-get install -y qt6-base-dev libgl1-mesa-dev libwayland-dev wayland-protocols libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
 
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
