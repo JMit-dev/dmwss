@@ -6,89 +6,89 @@
 
 void CPU::OP_LD_r_r(u8& dest, u8 src) {
     dest = src;
-    m_cycles += 4;
+    // LD r,r takes 4 T-cycles total (just the opcode fetch)
 }
 
 void CPU::OP_LD_r_n(u8& reg) {
-    reg = FetchByte();
-    m_cycles += 4;
+    reg = FetchByte();  // FetchByte adds 4 T-cycles for immediate byte
+    // Total: 4 (opcode) + 4 (immediate) = 8 T-cycles
 }
 
 void CPU::OP_LD_r_HL(u8& reg) {
-    reg = ReadByte(m_regs.hl);
+    reg = ReadByte(m_regs.hl);  // ReadByte already adds 4 T-cycles
 }
 
 void CPU::OP_LD_HL_r(u8 reg) {
-    WriteByte(m_regs.hl, reg);
+    WriteByte(m_regs.hl, reg);  // WriteByte already adds 4 T-cycles
 }
 
 void CPU::OP_LD_HL_n() {
-    u8 value = FetchByte();
-    WriteByte(m_regs.hl, value);
-    m_cycles += 4;
+    u8 value = FetchByte();  // FetchByte adds 4 T-cycles
+    WriteByte(m_regs.hl, value);  // WriteByte adds 4 T-cycles
+    // Total: 4 (opcode) + 4 (immediate) + 4 (write) = 12 T-cycles
 }
 
 void CPU::OP_LD_A_BC() {
-    m_regs.a = ReadByte(m_regs.bc);
+    m_regs.a = ReadByte(m_regs.bc);  // ReadByte already adds 4 T-cycles
 }
 
 void CPU::OP_LD_A_DE() {
-    m_regs.a = ReadByte(m_regs.de);
+    m_regs.a = ReadByte(m_regs.de);  // ReadByte already adds 4 T-cycles
 }
 
 void CPU::OP_LD_A_nn() {
-    u16 address = FetchWord();
-    m_regs.a = ReadByte(address);
+    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
+    m_regs.a = ReadByte(address);  // ReadByte adds 4 T-cycles
 }
 
 void CPU::OP_LD_BC_A() {
-    WriteByte(m_regs.bc, m_regs.a);
+    WriteByte(m_regs.bc, m_regs.a);  // WriteByte already adds 4 T-cycles
 }
 
 void CPU::OP_LD_DE_A() {
-    WriteByte(m_regs.de, m_regs.a);
+    WriteByte(m_regs.de, m_regs.a);  // WriteByte already adds 4 T-cycles
 }
 
 void CPU::OP_LD_nn_A() {
-    u16 address = FetchWord();
-    WriteByte(address, m_regs.a);
+    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
+    WriteByte(address, m_regs.a);  // WriteByte adds 4 T-cycles
 }
 
 void CPU::OP_LDH_A_n() {
-    u8 offset = FetchByte();
-    m_regs.a = ReadByte(0xFF00 + offset);
+    u8 offset = FetchByte();  // ReadByte adds 4 T-cycles
+    m_regs.a = ReadByte(0xFF00 + offset);  // ReadByte adds 4 T-cycles
 }
 
 void CPU::OP_LDH_n_A() {
-    u8 offset = FetchByte();
-    WriteByte(0xFF00 + offset, m_regs.a);
+    u8 offset = FetchByte();  // ReadByte adds 4 T-cycles
+    WriteByte(0xFF00 + offset, m_regs.a);  // WriteByte adds 4 T-cycles
 }
 
 void CPU::OP_LD_A_C() {
-    m_regs.a = ReadByte(0xFF00 + m_regs.c);
+    m_regs.a = ReadByte(0xFF00 + m_regs.c);  // ReadByte already adds 4 T-cycles
 }
 
 void CPU::OP_LD_C_A() {
-    WriteByte(0xFF00 + m_regs.c, m_regs.a);
+    WriteByte(0xFF00 + m_regs.c, m_regs.a);  // WriteByte already adds 4 T-cycles
 }
 
 void CPU::OP_LDI_HL_A() {
-    WriteByte(m_regs.hl, m_regs.a);
+    WriteByte(m_regs.hl, m_regs.a);  // WriteByte already adds 4 T-cycles
     m_regs.hl++;
 }
 
 void CPU::OP_LDI_A_HL() {
-    m_regs.a = ReadByte(m_regs.hl);
+    m_regs.a = ReadByte(m_regs.hl);  // ReadByte already adds 4 T-cycles
     m_regs.hl++;
 }
 
 void CPU::OP_LDD_HL_A() {
-    WriteByte(m_regs.hl, m_regs.a);
+    WriteByte(m_regs.hl, m_regs.a);  // WriteByte already adds 4 T-cycles
     m_regs.hl--;
 }
 
 void CPU::OP_LDD_A_HL() {
-    m_regs.a = ReadByte(m_regs.hl);
+    m_regs.a = ReadByte(m_regs.hl);  // ReadByte already adds 4 T-cycles
     m_regs.hl--;
 }
 
@@ -97,8 +97,8 @@ void CPU::OP_LDD_A_HL() {
 // ============================================================================
 
 void CPU::OP_LD_rr_nn(u16& reg) {
-    reg = FetchWord();
-    m_cycles += 4;
+    reg = FetchWord();  // FetchWord adds 8 T-cycles
+    // Total: 4 (opcode) + 8 (immediate word) = 12 T-cycles
 }
 
 void CPU::OP_LD_SP_HL() {
@@ -107,22 +107,23 @@ void CPU::OP_LD_SP_HL() {
 }
 
 void CPU::OP_PUSH(u16 reg) {
-    Push(reg);
-    m_cycles += 4;
+    Push(reg);  // WriteWord adds 8 T-cycles
+    m_cycles += 8;  // PUSH takes 16 T-cycles total
 }
 
 void CPU::OP_POP(u16& reg) {
-    reg = Pop();
+    reg = Pop();  // ReadWord adds 8 T-cycles
     // Special case: F register only uses upper 4 bits
     if (&reg == &m_regs.af) {
         m_regs.f &= 0xF0;
     }
+    m_cycles += 4;  // POP takes 12 T-cycles total
 }
 
 void CPU::OP_LD_nn_SP() {
-    u16 address = FetchWord();
-    WriteWord(address, m_regs.sp);
-    m_cycles += 4;
+    u16 address = FetchWord();  // FetchWord adds 8 T-cycles
+    WriteWord(address, m_regs.sp);  // WriteWord adds 8 T-cycles
+    // Total: 4 (opcode) + 8 (address) + 8 (write) = 20 T-cycles
 }
 
 void CPU::OP_LD_HL_SP_e() {
@@ -145,124 +146,128 @@ void CPU::OP_LD_HL_SP_e() {
 
 void CPU::OP_ADD_A_r(u8 value) {
     u16 result = m_regs.a + value;
-    
+
     SetFlag(FLAG_Z, (result & 0xFF) == 0);
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, ((m_regs.a & 0x0F) + (value & 0x0F)) > 0x0F);
     SetFlag(FLAG_C, result > 0xFF);
-    
+
     m_regs.a = static_cast<u8>(result);
-    m_cycles += 4;
+    // ADD takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_ADC_A_r(u8 value) {
     u8 carry = GetFlag(FLAG_C) ? 1 : 0;
     u16 result = m_regs.a + value + carry;
-    
+
     SetFlag(FLAG_Z, (result & 0xFF) == 0);
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, ((m_regs.a & 0x0F) + (value & 0x0F) + carry) > 0x0F);
     SetFlag(FLAG_C, result > 0xFF);
-    
+
     m_regs.a = static_cast<u8>(result);
-    m_cycles += 4;
+    // ADC takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_SUB_r(u8 value) {
     u16 result = m_regs.a - value;
-    
+
     SetFlag(FLAG_Z, (result & 0xFF) == 0);
     SetFlag(FLAG_N, true);
     SetFlag(FLAG_H, (m_regs.a & 0x0F) < (value & 0x0F));
     SetFlag(FLAG_C, m_regs.a < value);
-    
+
     m_regs.a = static_cast<u8>(result);
-    m_cycles += 4;
+    // SUB takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_SBC_A_r(u8 value) {
     u8 carry = GetFlag(FLAG_C) ? 1 : 0;
     u16 result = m_regs.a - value - carry;
-    
+
     SetFlag(FLAG_Z, (result & 0xFF) == 0);
     SetFlag(FLAG_N, true);
     SetFlag(FLAG_H, (m_regs.a & 0x0F) < (value & 0x0F) + carry);
     SetFlag(FLAG_C, m_regs.a < value + carry);
-    
+
     m_regs.a = static_cast<u8>(result);
-    m_cycles += 4;
+    // SBC takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_AND_r(u8 value) {
     m_regs.a &= value;
-    
+
     SetFlags(m_regs.a == 0, false, true, false);
-    m_cycles += 4;
+    // AND takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_XOR_r(u8 value) {
     m_regs.a ^= value;
-    
+
     SetFlags(m_regs.a == 0, false, false, false);
-    m_cycles += 4;
+    // XOR takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_OR_r(u8 value) {
     m_regs.a |= value;
-    
+
     SetFlags(m_regs.a == 0, false, false, false);
-    m_cycles += 4;
+    // OR takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_CP_r(u8 value) {
     u16 result = m_regs.a - value;
-    
+
     SetFlag(FLAG_Z, (result & 0xFF) == 0);
     SetFlag(FLAG_N, true);
     SetFlag(FLAG_H, (m_regs.a & 0x0F) < (value & 0x0F));
     SetFlag(FLAG_C, m_regs.a < value);
-    
-    m_cycles += 4;
+
+    // CP takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_INC_r(u8& reg) {
     reg++;
-    
+
     SetFlag(FLAG_Z, reg == 0);
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, (reg & 0x0F) == 0);
-    
-    m_cycles += 4;
+
+    // INC r takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_DEC_r(u8& reg) {
     reg--;
-    
+
     SetFlag(FLAG_Z, reg == 0);
     SetFlag(FLAG_N, true);
     SetFlag(FLAG_H, (reg & 0x0F) == 0x0F);
-    
-    m_cycles += 4;
+
+    // DEC r takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_INC_HL() {
-    u8 value = ReadByte(m_regs.hl);
+    u8 value = ReadByte(m_regs.hl);  // ReadByte adds 4 T-cycles
     value++;
-    WriteByte(m_regs.hl, value);
-    
+    WriteByte(m_regs.hl, value);  // WriteByte adds 4 T-cycles
+
     SetFlag(FLAG_Z, value == 0);
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, (value & 0x0F) == 0);
+
+    m_cycles += 4;  // INC (HL) takes 12 T-cycles total
 }
 
 void CPU::OP_DEC_HL() {
-    u8 value = ReadByte(m_regs.hl);
+    u8 value = ReadByte(m_regs.hl);  // ReadByte adds 4 T-cycles
     value--;
-    WriteByte(m_regs.hl, value);
-    
+    WriteByte(m_regs.hl, value);  // WriteByte adds 4 T-cycles
+
     SetFlag(FLAG_Z, value == 0);
     SetFlag(FLAG_N, true);
     SetFlag(FLAG_H, (value & 0x0F) == 0x0F);
+
+    m_cycles += 4;  // DEC (HL) takes 12 T-cycles total
 }
 
 // ============================================================================
@@ -308,8 +313,8 @@ void CPU::OP_ADD_SP_e() {
 // ============================================================================
 
 void CPU::OP_JP_nn() {
-    m_regs.pc = FetchWord();
-    m_cycles += 4;
+    m_regs.pc = FetchWord();  // ReadWord adds 8 T-cycles
+    m_cycles += 4;  // JP nn takes 16 T-cycles total
 }
 
 void CPU::OP_JP_HL() {
@@ -318,27 +323,27 @@ void CPU::OP_JP_HL() {
 }
 
 void CPU::OP_JP_cc_nn(bool condition) {
-    u16 address = FetchWord();
+    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
     if (condition) {
         m_regs.pc = address;
-        m_cycles += 4;
+        m_cycles += 4;  // Taken: 16 T-cycles total
     }
-    m_cycles += 4;
+    // Not taken: 12 T-cycles total (ReadWord already added 8)
 }
 
 void CPU::OP_JR_e() {
-    s8 offset = static_cast<s8>(FetchByte());
+    s8 offset = static_cast<s8>(FetchByte());  // ReadByte adds 4 T-cycles
     m_regs.pc += offset;
-    m_cycles += 4;
+    m_cycles += 4;  // JR takes 12 T-cycles total
 }
 
 void CPU::OP_JR_cc_e(bool condition) {
-    s8 offset = static_cast<s8>(FetchByte());
+    s8 offset = static_cast<s8>(FetchByte());  // ReadByte adds 4 T-cycles
     if (condition) {
         m_regs.pc += offset;
-        m_cycles += 4;
+        m_cycles += 4;  // Taken: 12 T-cycles total
     }
-    m_cycles += 4;
+    // Not taken: 8 T-cycles total (ReadByte already added 4)
 }
 
 // ============================================================================
@@ -346,39 +351,40 @@ void CPU::OP_JR_cc_e(bool condition) {
 // ============================================================================
 
 void CPU::OP_CALL_nn() {
-    u16 address = FetchWord();
-    Push(m_regs.pc);
+    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
+    Push(m_regs.pc);  // WriteWord adds 8 T-cycles
     m_regs.pc = address;
-    m_cycles += 4;
+    m_cycles += 4;  // CALL takes 24 T-cycles total
 }
 
 void CPU::OP_CALL_cc_nn(bool condition) {
-    u16 address = FetchWord();
+    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
     if (condition) {
-        Push(m_regs.pc);
+        Push(m_regs.pc);  // WriteWord adds 8 T-cycles
         m_regs.pc = address;
-        m_cycles += 4;
+        m_cycles += 4;  // Taken: 24 T-cycles total
     }
-    m_cycles += 4;
+    // Not taken: 12 T-cycles total (ReadWord already added 8)
 }
 
 void CPU::OP_RET() {
-    m_regs.pc = Pop();
-    m_cycles += 4;
+    m_regs.pc = Pop();  // ReadWord adds 8 T-cycles
+    m_cycles += 8;  // RET takes 16 T-cycles total
 }
 
 void CPU::OP_RET_cc(bool condition) {
     if (condition) {
-        m_regs.pc = Pop();
-        m_cycles += 12;
+        m_regs.pc = Pop();  // ReadWord adds 8 T-cycles
+        m_cycles += 8;  // Taken: 20 T-cycles total
+    } else {
+        m_cycles += 4;   // Not taken: 8 T-cycles total
     }
-    m_cycles += 8;
 }
 
 void CPU::OP_RETI() {
-    m_regs.pc = Pop();
+    m_regs.pc = Pop();  // ReadWord adds 8 T-cycles
     m_ime = true;
-    m_cycles += 4;
+    m_cycles += 8;  // RETI takes 16 T-cycles total
 }
 
 void CPU::OP_RST(u8 vector) {
@@ -394,33 +400,33 @@ void CPU::OP_RST(u8 vector) {
 void CPU::OP_RLCA() {
     bool carry = (m_regs.a & 0x80) != 0;
     m_regs.a = (m_regs.a << 1) | (carry ? 1 : 0);
-    
+
     SetFlags(false, false, false, carry);
-    m_cycles += 4;
+    // RLCA takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_RLA() {
     bool carry = (m_regs.a & 0x80) != 0;
     m_regs.a = (m_regs.a << 1) | (GetFlag(FLAG_C) ? 1 : 0);
-    
+
     SetFlags(false, false, false, carry);
-    m_cycles += 4;
+    // RLA takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_RRCA() {
     bool carry = (m_regs.a & 0x01) != 0;
     m_regs.a = (m_regs.a >> 1) | (carry ? 0x80 : 0);
-    
+
     SetFlags(false, false, false, carry);
-    m_cycles += 4;
+    // RRCA takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_RRA() {
     bool carry = (m_regs.a & 0x01) != 0;
     m_regs.a = (m_regs.a >> 1) | (GetFlag(FLAG_C) ? 0x80 : 0);
-    
+
     SetFlags(false, false, false, carry);
-    m_cycles += 4;
+    // RRA takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_RLC(u8& reg) {
@@ -517,7 +523,7 @@ void CPU::OP_RES(u8 bit, u8& reg) {
 
 void CPU::OP_DAA() {
     u8 a = m_regs.a;
-    
+
     if (!GetFlag(FLAG_N)) {
         if (GetFlag(FLAG_C) || a > 0x99) {
             a += 0x60;
@@ -534,61 +540,61 @@ void CPU::OP_DAA() {
             a -= 0x06;
         }
     }
-    
+
     m_regs.a = a;
     SetFlag(FLAG_Z, m_regs.a == 0);
     SetFlag(FLAG_H, false);
-    
-    m_cycles += 4;
+
+    // DAA takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_CPL() {
     m_regs.a = ~m_regs.a;
-    
+
     SetFlag(FLAG_N, true);
     SetFlag(FLAG_H, true);
-    
-    m_cycles += 4;
+
+    // CPL takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_CCF() {
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, false);
     SetFlag(FLAG_C, !GetFlag(FLAG_C));
-    
-    m_cycles += 4;
+
+    // CCF takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_SCF() {
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, false);
     SetFlag(FLAG_C, true);
-    
-    m_cycles += 4;
+
+    // SCF takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_NOP() {
-    m_cycles += 4;
+    // NOP takes 4 T-cycles total (just the opcode fetch, already counted)
 }
 
 void CPU::OP_HALT() {
     m_halted = true;
-    m_cycles += 4;
+    // HALT takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_STOP() {
     m_stopped = true;
-    m_cycles += 4;
+    // STOP takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_DI() {
     m_ime = false;
-    m_cycles += 4;
+    // DI takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_EI() {
     m_ime = true;
-    m_cycles += 4;
+    // EI takes 4 T-cycles (just opcode fetch)
 }
 
 // ============================================================================
@@ -620,10 +626,11 @@ void CPU::ExecuteCBInstruction(u8 opcode) {
     // (HL) operations need special handling
     if (reg_index == 6) {
         u8 value = ReadByte(m_regs.hl);
-        
+
         switch (op_type) {
-            case 0: {  // Rotates/shifts
+            case 0: {  // Rotates/shifts - 16 T-cycles (4 CB + 4 read + 4 op + 4 write)
                 u8 sub_op = (opcode >> 3) & 0x07;
+                m_cycles -= 8;  // Undo the 8 cycles added by OP_ function
                 switch (sub_op) {
                     case 0: OP_RLC(value); break;
                     case 1: OP_RRC(value); break;
@@ -635,12 +642,12 @@ void CPU::ExecuteCBInstruction(u8 opcode) {
                     case 7: OP_SRL(value); break;
                 }
                 WriteByte(m_regs.hl, value);
-                m_cycles += 8;
+                m_cycles += 12;  // Add correct total: read(4) + write(4) + internal(4)
                 break;
             }
-            case 1: OP_BIT(bit, value); m_cycles += 4; break;
-            case 2: value &= ~(1 << bit); WriteByte(m_regs.hl, value); m_cycles += 8; break;
-            case 3: value |= (1 << bit); WriteByte(m_regs.hl, value); m_cycles += 8; break;
+            case 1: OP_BIT(bit, value); break;  // BIT (HL) - 12 T-cycles (4 CB + 4 read + 4 test)
+            case 2: value &= ~(1 << bit); WriteByte(m_regs.hl, value); m_cycles += 8; break;  // RES (HL) - 16 T-cycles
+            case 3: value |= (1 << bit); WriteByte(m_regs.hl, value); m_cycles += 8; break;  // SET (HL) - 16 T-cycles
         }
     } else {
         u8& reg = get_reg();
