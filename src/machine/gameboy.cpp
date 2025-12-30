@@ -136,6 +136,31 @@ void GameBoy::RegisterIOHandlers() {
     // as that would cause infinite recursion. The Memory class handles storing
     // the value in m_io[] array before/after calling these handlers.
 
-    // For now, we'll use minimal I/O handlers and let the default behavior handle most registers
-    // The PPU and other components already register their own handlers
+    // Joypad register (0xFF00 / P1)
+    m_memory->RegisterIOHandler(0xFF00,
+        [this](u16) -> u8 {
+            // Return joypad state
+            // Bits 4-5 select which buttons to read (0=select, 1=not select)
+            // Bits 0-3 are button states (0=pressed, 1=not pressed)
+            return m_joypad_state;
+        },
+        [this](u16, u8 value) {
+            // Only bits 4-5 are writable (button group select)
+            m_joypad_state = (m_joypad_state & 0x0F) | (value & 0x30);
+        }
+    );
+
+    // Serial I/O registers (0xFF01-0xFF02)
+    // Stub these out for now - most games don't use serial
+    m_memory->RegisterIOHandler(0xFF01,
+        [](u16) -> u8 { return 0xFF; },  // SB - Serial transfer data
+        [](u16, u8) {}                    // Ignore writes
+    );
+
+    m_memory->RegisterIOHandler(0xFF02,
+        [](u16) -> u8 { return 0x7E; },  // SC - Serial transfer control (bit 7=0, not transferring)
+        [](u16, u8) {}                    // Ignore writes
+    );
+
+    // PPU and Timer register their own handlers in their constructors
 }
