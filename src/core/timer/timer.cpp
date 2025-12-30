@@ -25,13 +25,13 @@ void Timer::Reset() {
 }
 
 void Timer::Step(u32 cycles) {
-    // The system counter increments every M-cycle (4 T-cycles)
-    // Process in M-cycle increments
-    for (u32 i = 0; i < cycles; i += 4) {
+    // The system counter increments every T-cycle
+    // Process each T-cycle individually
+    for (u32 i = 0; i < cycles; i++) {
         // Check for timer falling edge BEFORE incrementing
         if (IsTimerEnabled()) {
             bool old_bit = GetTimerBit(m_div_counter);
-            m_div_counter++;  // Increment by 1 M-cycle
+            m_div_counter++;  // Increment by 1 T-cycle
             bool new_bit = GetTimerBit(m_div_counter);
 
             if (old_bit && !new_bit) {
@@ -61,18 +61,18 @@ void Timer::UpdateTIMA(u32 cycles) {
 
 u8 Timer::GetBitPosition() const {
     switch (m_tac & 0x03) {
-        case 0: return 7;  // 256 M-cycles -> bit 7 (2^8 = 256)
-        case 1: return 1;  // 4 M-cycles -> bit 1 (2^2 = 4)
-        case 2: return 3;  // 16 M-cycles -> bit 3 (2^4 = 16)
-        case 3: return 5;  // 64 M-cycles -> bit 5 (2^6 = 64)
+        case 0: return 9;   // 1024 T-cycles -> bit 9 (2^10 = 1024)
+        case 1: return 3;   // 16 T-cycles -> bit 3 (2^4 = 16)
+        case 2: return 5;   // 64 T-cycles -> bit 5 (2^6 = 64)
+        case 3: return 7;   // 256 T-cycles -> bit 7 (2^8 = 256)
     }
-    return 7;
+    return 9;
 }
 
 bool Timer::GetTimerBit(u16 counter) const {
     // Select which bit to check based on TAC frequency select
     // TAC bits 0-1 select the bit from the system counter
-    // Counter increments every M-cycle, so bit N gives period of 2^(N+1) M-cycles
+    // Counter increments every T-cycle, so bit N gives period of 2^(N+1) T-cycles
     u8 bit_position = GetBitPosition();
     return (counter >> bit_position) & 1;
 }
