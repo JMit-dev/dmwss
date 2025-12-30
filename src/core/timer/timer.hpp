@@ -29,6 +29,8 @@ private:
     void UpdateTIMA(u32 cycles);
     u32 GetTimerFrequency() const;
     bool IsTimerEnabled() const;
+    bool GetTimerBit(u16 counter) const;
+    u8 GetBitPosition() const;
 
     // I/O register handlers
     void RegisterIOHandlers();
