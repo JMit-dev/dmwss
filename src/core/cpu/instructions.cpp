@@ -593,8 +593,9 @@ void CPU::OP_DI() {
 }
 
 void CPU::OP_EI() {
-    m_ime = true;
+    m_ime_scheduled = true;
     // EI takes 4 T-cycles (just opcode fetch)
+    // IME is enabled after the next instruction executes
 }
 
 // ============================================================================

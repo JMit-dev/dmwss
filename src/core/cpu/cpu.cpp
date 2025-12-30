@@ -5,6 +5,7 @@ CPU::CPU(Memory& memory, Scheduler& scheduler)
     : m_memory(memory)
     , m_scheduler(scheduler)
     , m_ime(false)
+    , m_ime_scheduled(false)
     , m_halted(false)
     , m_stopped(false)
     , m_cycles(0) {
@@ -21,6 +22,7 @@ void CPU::Reset() {
     m_regs.pc = 0x0100;  // Start of cartridge
 
     m_ime = false;
+    m_ime_scheduled = false;
     m_halted = false;
     m_stopped = false;
     m_cycles = 0;
@@ -30,6 +32,12 @@ void CPU::Reset() {
 
 u32 CPU::Step() {
     m_cycles = 0;
+
+    // Handle EI delay - IME gets enabled AFTER the instruction following EI
+    if (m_ime_scheduled) {
+        m_ime = true;
+        m_ime_scheduled = false;
+    }
 
     // Check if we should wake from HALT
     // HALT wakes up when any interrupt is pending (IE & IF != 0), regardless of IME

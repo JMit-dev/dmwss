@@ -88,6 +88,7 @@ private:
     Scheduler& m_scheduler;
 
     bool m_ime;        // Interrupt Master Enable
+    bool m_ime_scheduled;  // IME enable scheduled for next instruction (EI delay)
     bool m_halted;     // CPU halted
     bool m_stopped;    // CPU stopped
     u32 m_cycles;      // Cycle counter for current instruction
