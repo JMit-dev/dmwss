@@ -108,8 +108,11 @@ add_executable(blargg_runner tests/blargg_runner.cpp)
 target_link_libraries(blargg_runner PRIVATE dmwss_core)
 
 # Register test ROMs with CTest if the (untracked) test-roms directory exists.
-# oam_bug is excluded: it tests the DMG OAM corruption hardware bug, which
-# this emulator does not implement.
+# The oam_bug single ROM 7-timing_effect is excluded: its text output
+# (~19 OAM dumps) overflows the test framework's 8KB output buffer at
+# 0xA004 and destroys its own code in WRAM, so the single ROM cannot pass
+# (binjgb fails it the same way). The combined oam_bug.gb runs the same
+# test with a working layout and passes, so it covers test 7.
 set(TEST_ROM_DIR ${CMAKE_SOURCE_DIR}/test-roms/gb-test-roms)
 if(EXISTS ${TEST_ROM_DIR})
     file(GLOB BLARGG_ROMS
@@ -118,6 +121,15 @@ if(EXISTS ${TEST_ROM_DIR})
         "${TEST_ROM_DIR}/mem_timing/individual/*.gb"
         "${TEST_ROM_DIR}/mem_timing-2/rom_singles/*.gb"
         "${TEST_ROM_DIR}/halt_bug.gb"
+        "${TEST_ROM_DIR}/interrupt_time/interrupt_time.gb"
+        "${TEST_ROM_DIR}/oam_bug/rom_singles/1-lcd_sync.gb"
+        "${TEST_ROM_DIR}/oam_bug/rom_singles/2-causes.gb"
+        "${TEST_ROM_DIR}/oam_bug/rom_singles/3-non_causes.gb"
+        "${TEST_ROM_DIR}/oam_bug/rom_singles/4-scanline_timing.gb"
+        "${TEST_ROM_DIR}/oam_bug/rom_singles/5-timing_bug.gb"
+        "${TEST_ROM_DIR}/oam_bug/rom_singles/6-timing_no_bug.gb"
+        "${TEST_ROM_DIR}/oam_bug/rom_singles/8-instr_effect.gb"
+        "${TEST_ROM_DIR}/oam_bug/oam_bug.gb"
     )
     foreach(ROM ${BLARGG_ROMS})
         file(RELATIVE_PATH TEST_NAME ${TEST_ROM_DIR} ${ROM})
