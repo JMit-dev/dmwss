@@ -103,21 +103,20 @@ void CPU::OP_LD_rr_nn(u16& reg) {
 
 void CPU::OP_LD_SP_HL() {
     m_regs.sp = m_regs.hl;
-    m_cycles += 8;
+    Tick(4);  // Internal cycle - LD SP,HL takes 8 T-cycles total
 }
 
 void CPU::OP_PUSH(u16 reg) {
-    Push(reg);  // WriteWord adds 8 T-cycles
-    m_cycles += 8;  // PUSH takes 16 T-cycles total
+    Tick(4);   // Internal cycle before the writes
+    Push(reg); // 8 T-cycles - PUSH takes 16 T-cycles total
 }
 
 void CPU::OP_POP(u16& reg) {
-    reg = Pop();  // ReadWord adds 8 T-cycles
+    reg = Pop();  // 8 T-cycles - POP takes 12 T-cycles total
     // Special case: F register only uses upper 4 bits
     if (&reg == &m_regs.af) {
         m_regs.f &= 0xF0;
     }
-    m_cycles += 4;  // POP takes 12 T-cycles total
 }
 
 void CPU::OP_LD_nn_SP() {
@@ -137,7 +136,7 @@ void CPU::OP_LD_HL_SP_e() {
     SetFlag(FLAG_C, ((m_regs.sp & 0xFF) + (offset & 0xFF)) > 0xFF);
     
     m_regs.hl = static_cast<u16>(result);
-    m_cycles += 4;
+    Tick(4);  // Internal cycle - LD HL,SP+e takes 12 T-cycles total
 }
 
 // ============================================================================
@@ -254,8 +253,7 @@ void CPU::OP_INC_HL() {
     SetFlag(FLAG_Z, value == 0);
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, (value & 0x0F) == 0);
-
-    m_cycles += 4;  // INC (HL) takes 12 T-cycles total
+    // INC (HL) takes 12 T-cycles total: fetch + read + write
 }
 
 void CPU::OP_DEC_HL() {
@@ -266,8 +264,7 @@ void CPU::OP_DEC_HL() {
     SetFlag(FLAG_Z, value == 0);
     SetFlag(FLAG_N, true);
     SetFlag(FLAG_H, (value & 0x0F) == 0x0F);
-
-    m_cycles += 4;  // DEC (HL) takes 12 T-cycles total
+    // DEC (HL) takes 12 T-cycles total: fetch + read + write
 }
 
 // ============================================================================
@@ -282,17 +279,17 @@ void CPU::OP_ADD_HL_rr(u16 value) {
     SetFlag(FLAG_C, result > 0xFFFF);
     
     m_regs.hl = static_cast<u16>(result);
-    m_cycles += 8;
+    Tick(4);  // Internal cycle - ADD HL,rr takes 8 T-cycles total
 }
 
 void CPU::OP_INC_rr(u16& reg) {
     reg++;
-    m_cycles += 8;
+    Tick(4);  // Internal cycle - INC rr takes 8 T-cycles total
 }
 
 void CPU::OP_DEC_rr(u16& reg) {
     reg--;
-    m_cycles += 8;
+    Tick(4);  // Internal cycle - DEC rr takes 8 T-cycles total
 }
 
 void CPU::OP_ADD_SP_e() {
@@ -305,7 +302,7 @@ void CPU::OP_ADD_SP_e() {
     SetFlag(FLAG_C, ((m_regs.sp & 0xFF) + (offset & 0xFF)) > 0xFF);
     
     m_regs.sp = static_cast<u16>(result);
-    m_cycles += 12;
+    Tick(8);  // Two internal cycles - ADD SP,e takes 16 T-cycles total
 }
 
 // ============================================================================
@@ -313,37 +310,37 @@ void CPU::OP_ADD_SP_e() {
 // ============================================================================
 
 void CPU::OP_JP_nn() {
-    m_regs.pc = FetchWord();  // ReadWord adds 8 T-cycles
-    m_cycles += 4;  // JP nn takes 16 T-cycles total
+    m_regs.pc = FetchWord();  // 8 T-cycles
+    Tick(4);  // Internal cycle - JP nn takes 16 T-cycles total
 }
 
 void CPU::OP_JP_HL() {
     m_regs.pc = m_regs.hl;
-    m_cycles += 4;
+    // JP HL takes 4 T-cycles (just opcode fetch)
 }
 
 void CPU::OP_JP_cc_nn(bool condition) {
-    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
+    u16 address = FetchWord();  // 8 T-cycles
     if (condition) {
         m_regs.pc = address;
-        m_cycles += 4;  // Taken: 16 T-cycles total
+        Tick(4);  // Taken: 16 T-cycles total
     }
-    // Not taken: 12 T-cycles total (ReadWord already added 8)
+    // Not taken: 12 T-cycles total
 }
 
 void CPU::OP_JR_e() {
-    s8 offset = static_cast<s8>(FetchByte());  // ReadByte adds 4 T-cycles
+    s8 offset = static_cast<s8>(FetchByte());  // 4 T-cycles
     m_regs.pc += offset;
-    m_cycles += 4;  // JR takes 12 T-cycles total
+    Tick(4);  // Internal cycle - JR takes 12 T-cycles total
 }
 
 void CPU::OP_JR_cc_e(bool condition) {
-    s8 offset = static_cast<s8>(FetchByte());  // ReadByte adds 4 T-cycles
+    s8 offset = static_cast<s8>(FetchByte());  // 4 T-cycles
     if (condition) {
         m_regs.pc += offset;
-        m_cycles += 4;  // Taken: 12 T-cycles total
+        Tick(4);  // Taken: 12 T-cycles total
     }
-    // Not taken: 8 T-cycles total (ReadByte already added 4)
+    // Not taken: 8 T-cycles total
 }
 
 // ============================================================================
@@ -351,46 +348,46 @@ void CPU::OP_JR_cc_e(bool condition) {
 // ============================================================================
 
 void CPU::OP_CALL_nn() {
-    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
-    Push(m_regs.pc);  // WriteWord adds 8 T-cycles
+    u16 address = FetchWord();  // 8 T-cycles
+    Tick(4);          // Internal cycle before the pushes
+    Push(m_regs.pc);  // 8 T-cycles - CALL takes 24 T-cycles total
     m_regs.pc = address;
-    m_cycles += 4;  // CALL takes 24 T-cycles total
 }
 
 void CPU::OP_CALL_cc_nn(bool condition) {
-    u16 address = FetchWord();  // ReadWord adds 8 T-cycles
+    u16 address = FetchWord();  // 8 T-cycles
     if (condition) {
-        Push(m_regs.pc);  // WriteWord adds 8 T-cycles
+        Tick(4);          // Internal cycle before the pushes
+        Push(m_regs.pc);  // 8 T-cycles - taken: 24 T-cycles total
         m_regs.pc = address;
-        m_cycles += 4;  // Taken: 24 T-cycles total
     }
-    // Not taken: 12 T-cycles total (ReadWord already added 8)
+    // Not taken: 12 T-cycles total
 }
 
 void CPU::OP_RET() {
-    m_regs.pc = Pop();  // ReadWord adds 8 T-cycles
-    m_cycles += 8;  // RET takes 16 T-cycles total
+    m_regs.pc = Pop();  // 8 T-cycles
+    Tick(4);  // Internal cycle - RET takes 16 T-cycles total
 }
 
 void CPU::OP_RET_cc(bool condition) {
+    Tick(4);  // Internal cycle for the condition check
     if (condition) {
-        m_regs.pc = Pop();  // ReadWord adds 8 T-cycles
-        m_cycles += 8;  // Taken: 20 T-cycles total
-    } else {
-        m_cycles += 4;   // Not taken: 8 T-cycles total
+        m_regs.pc = Pop();  // 8 T-cycles
+        Tick(4);  // Taken: 20 T-cycles total
     }
+    // Not taken: 8 T-cycles total
 }
 
 void CPU::OP_RETI() {
-    m_regs.pc = Pop();  // ReadWord adds 8 T-cycles
+    m_regs.pc = Pop();  // 8 T-cycles
     m_ime = true;
-    m_cycles += 8;  // RETI takes 16 T-cycles total
+    Tick(4);  // Internal cycle - RETI takes 16 T-cycles total
 }
 
 void CPU::OP_RST(u8 vector) {
-    Push(m_regs.pc);
+    Tick(4);          // Internal cycle before the pushes
+    Push(m_regs.pc);  // 8 T-cycles - RST takes 16 T-cycles total
     m_regs.pc = vector;
-    m_cycles += 16;  // RST takes 4 M-cycles = 16 T-cycles
 }
 
 // ============================================================================
@@ -429,68 +426,63 @@ void CPU::OP_RRA() {
     // RRA takes 4 T-cycles (just opcode fetch)
 }
 
+// CB register operations take 8 T-cycles total (CB prefix + opcode fetch),
+// so the operation itself adds no cycles
+
 void CPU::OP_RLC(u8& reg) {
     bool carry = (reg & 0x80) != 0;
     reg = (reg << 1) | (carry ? 1 : 0);
-    
+
     SetFlags(reg == 0, false, false, carry);
-    m_cycles += 8;
 }
 
 void CPU::OP_RL(u8& reg) {
     bool carry = (reg & 0x80) != 0;
     reg = (reg << 1) | (GetFlag(FLAG_C) ? 1 : 0);
-    
+
     SetFlags(reg == 0, false, false, carry);
-    m_cycles += 8;
 }
 
 void CPU::OP_RRC(u8& reg) {
     bool carry = (reg & 0x01) != 0;
     reg = (reg >> 1) | (carry ? 0x80 : 0);
-    
+
     SetFlags(reg == 0, false, false, carry);
-    m_cycles += 8;
 }
 
 void CPU::OP_RR(u8& reg) {
     bool carry = (reg & 0x01) != 0;
     reg = (reg >> 1) | (GetFlag(FLAG_C) ? 0x80 : 0);
-    
+
     SetFlags(reg == 0, false, false, carry);
-    m_cycles += 8;
 }
 
 void CPU::OP_SLA(u8& reg) {
     bool carry = (reg & 0x80) != 0;
     reg <<= 1;
-    
+
     SetFlags(reg == 0, false, false, carry);
-    m_cycles += 8;
 }
 
 void CPU::OP_SRA(u8& reg) {
     bool carry = (reg & 0x01) != 0;
     u8 msb = reg & 0x80;
     reg = (reg >> 1) | msb;
-    
+
     SetFlags(reg == 0, false, false, carry);
-    m_cycles += 8;
 }
 
 void CPU::OP_SRL(u8& reg) {
     bool carry = (reg & 0x01) != 0;
     reg >>= 1;
-    
+
     SetFlags(reg == 0, false, false, carry);
-    m_cycles += 8;
 }
 
 void CPU::OP_SWAP(u8& reg) {
     reg = ((reg & 0x0F) << 4) | ((reg & 0xF0) >> 4);
-    
+
     SetFlags(reg == 0, false, false, false);
-    m_cycles += 8;
 }
 
 // ============================================================================
@@ -499,22 +491,18 @@ void CPU::OP_SWAP(u8& reg) {
 
 void CPU::OP_BIT(u8 bit, u8 value) {
     bool is_set = (value & (1 << bit)) != 0;
-    
+
     SetFlag(FLAG_Z, !is_set);
     SetFlag(FLAG_N, false);
     SetFlag(FLAG_H, true);
-    
-    m_cycles += 8;
 }
 
 void CPU::OP_SET(u8 bit, u8& reg) {
     reg |= (1 << bit);
-    m_cycles += 8;
 }
 
 void CPU::OP_RES(u8 bit, u8& reg) {
     reg &= ~(1 << bit);
-    m_cycles += 8;
 }
 
 // ============================================================================
@@ -629,9 +617,8 @@ void CPU::ExecuteCBInstruction(u8 opcode) {
         u8 value = ReadByte(m_regs.hl);
 
         switch (op_type) {
-            case 0: {  // Rotates/shifts - 16 T-cycles (4 CB + 4 read + 4 op + 4 write)
+            case 0: {  // Rotates/shifts - 16 T-cycles (fetch + fetch + read + write)
                 u8 sub_op = (opcode >> 3) & 0x07;
-                m_cycles -= 8;  // Undo the 8 cycles added by OP_ function
                 switch (sub_op) {
                     case 0: OP_RLC(value); break;
                     case 1: OP_RRC(value); break;
@@ -643,12 +630,11 @@ void CPU::ExecuteCBInstruction(u8 opcode) {
                     case 7: OP_SRL(value); break;
                 }
                 WriteByte(m_regs.hl, value);
-                m_cycles += 12;  // Add correct total: read(4) + write(4) + internal(4)
                 break;
             }
-            case 1: OP_BIT(bit, value); break;  // BIT (HL) - 12 T-cycles (4 CB + 4 read + 4 test)
-            case 2: value &= ~(1 << bit); WriteByte(m_regs.hl, value); m_cycles += 8; break;  // RES (HL) - 16 T-cycles
-            case 3: value |= (1 << bit); WriteByte(m_regs.hl, value); m_cycles += 8; break;  // SET (HL) - 16 T-cycles
+            case 1: OP_BIT(bit, value); break;  // BIT (HL) - 12 T-cycles (fetch + fetch + read)
+            case 2: value &= ~(1 << bit); WriteByte(m_regs.hl, value); break;  // RES (HL) - 16 T-cycles
+            case 3: value |= (1 << bit); WriteByte(m_regs.hl, value); break;  // SET (HL) - 16 T-cycles
         }
     } else {
         u8& reg = get_reg();

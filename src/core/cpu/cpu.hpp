@@ -25,6 +25,12 @@ public:
     CPU(Memory& memory, Scheduler& scheduler);
     ~CPU() = default;
 
+    // Callback invoked as emulated time passes (once per M-cycle, in T-cycles).
+    // Components hooked here observe memory accesses at the correct cycle
+    // within an instruction, which blargg's mem_timing tests require.
+    using TickCallback = std::function<void(u32)>;
+    void SetTickCallback(TickCallback callback) { m_tick = std::move(callback); }
+
     // Execute one instruction
     u32 Step();
 
@@ -93,6 +99,8 @@ private:
     bool m_stopped;    // CPU stopped
     u32 m_cycles;      // Cycle counter for current instruction
 
+    TickCallback m_tick;
+
     // Flag manipulation helpers
     FORCE_INLINE bool GetFlag(u8 flag) const {
         return (m_regs.f & flag) != 0;
@@ -111,25 +119,35 @@ private:
                    (h ? FLAG_H : 0) | (c ? FLAG_C : 0);
     }
 
-    // Memory access helpers
+    // Advance emulated time (components tick before the memory access so
+    // the access is observed on the last T-cycle of its M-cycle)
+    FORCE_INLINE void Tick(u32 cycles) {
+        m_cycles += cycles;
+        if (m_tick) {
+            m_tick(cycles);
+        }
+    }
+
+    // Memory access helpers - each access is one M-cycle (4 T-cycles)
     FORCE_INLINE u8 ReadByte(u16 address) {
-        m_cycles += 4;
+        Tick(4);
         return m_memory.Read(address);
     }
 
     FORCE_INLINE void WriteByte(u16 address, u8 value) {
-        m_cycles += 4;
+        Tick(4);
         m_memory.Write(address, value);
     }
 
     FORCE_INLINE u16 ReadWord(u16 address) {
-        m_cycles += 8;
-        return m_memory.Read16(address);
+        u8 low = ReadByte(address);
+        u8 high = ReadByte(address + 1);
+        return static_cast<u16>(low) | (static_cast<u16>(high) << 8);
     }
 
     FORCE_INLINE void WriteWord(u16 address, u16 value) {
-        m_cycles += 8;
-        m_memory.Write16(address, value);
+        WriteByte(address, static_cast<u8>(value & 0xFF));
+        WriteByte(address + 1, static_cast<u8>(value >> 8));
     }
 
     // Fetch helpers
@@ -143,16 +161,16 @@ private:
         return value;
     }
 
-    // Stack operations
+    // Stack operations - hardware pushes high byte first, pops low byte first
     FORCE_INLINE void Push(u16 value) {
-        m_regs.sp -= 2;
-        WriteWord(m_regs.sp, value);
+        WriteByte(--m_regs.sp, static_cast<u8>(value >> 8));
+        WriteByte(--m_regs.sp, static_cast<u8>(value & 0xFF));
     }
 
     FORCE_INLINE u16 Pop() {
-        u16 value = ReadWord(m_regs.sp);
-        m_regs.sp += 2;
-        return value;
+        u8 low = ReadByte(m_regs.sp++);
+        u8 high = ReadByte(m_regs.sp++);
+        return static_cast<u16>(low) | (static_cast<u16>(high) << 8);
     }
 
     // Instruction implementations (will be in instructions.cpp)

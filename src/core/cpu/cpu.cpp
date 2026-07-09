@@ -48,8 +48,8 @@ u32 CPU::Step() {
             m_halted = false;
             spdlog::trace("Waking from HALT, IF={:02X} IE={:02X}", if_reg, ie_reg);
         } else {
-            // Still halted, consume cycles and return
-            m_cycles = 4;
+            // Still halted, consume one M-cycle
+            Tick(4);
             return m_cycles;
         }
     }
@@ -92,14 +92,15 @@ void CPU::ServiceInterrupts() {
             // Clear the interrupt flag
             m_memory.Write(0xFF0F, if_reg & ~(1 << i));
 
-            // Push PC to stack
+            // Dispatch takes 5 M-cycles: 2 internal, 2 to push PC, 1 to set PC
+            Tick(8);
             Push(m_regs.pc);
 
             // Jump to interrupt vector
             u16 vector = 0x0040 + (i * 0x08);
             m_regs.pc = vector;
 
-            m_cycles += 20;  // Interrupt servicing takes 5 M-cycles
+            Tick(4);
 
             spdlog::trace("Servicing interrupt {}, jumping to 0x{:04X}", i, vector);
             break;
