@@ -334,10 +334,11 @@ void PPU::RenderBackground(u8 scanline) {
         u8 tile_index = vram[tile_map_addr];
         
         // Calculate tile data address
+        // Signed mode: tile 0 at 0x9000, tiles 128-255 at 0x8800-0x8FF0
         u16 tile_addr;
         if (signed_addressing) {
             s8 signed_index = static_cast<s8>(tile_index);
-            tile_addr = tile_data_base + ((signed_index + 128) * 16);
+            tile_addr = 0x1000 + (signed_index * 16);
         } else {
             tile_addr = tile_data_base + (tile_index * 16);
         }
@@ -385,10 +386,11 @@ void PPU::RenderWindow(u8 scanline) {
         u8 tile_index = vram[tile_map_addr];
         
         // Calculate tile data address
+        // Signed mode: tile 0 at 0x9000, tiles 128-255 at 0x8800-0x8FF0
         u16 tile_addr;
         if (signed_addressing) {
             s8 signed_index = static_cast<s8>(tile_index);
-            tile_addr = tile_data_base + ((signed_index + 128) * 16);
+            tile_addr = 0x1000 + (signed_index * 16);
         } else {
             tile_addr = tile_data_base + (tile_index * 16);
         }
