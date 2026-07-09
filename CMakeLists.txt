@@ -130,6 +130,8 @@ if(EXISTS ${TEST_ROM_DIR})
         "${TEST_ROM_DIR}/oam_bug/rom_singles/6-timing_no_bug.gb"
         "${TEST_ROM_DIR}/oam_bug/rom_singles/8-instr_effect.gb"
         "${TEST_ROM_DIR}/oam_bug/oam_bug.gb"
+        "${TEST_ROM_DIR}/dmg_sound/rom_singles/*.gb"
+        "${TEST_ROM_DIR}/dmg_sound/dmg_sound.gb"
     )
     foreach(ROM ${BLARGG_ROMS})
         file(RELATIVE_PATH TEST_NAME ${TEST_ROM_DIR} ${ROM})
