@@ -54,6 +54,7 @@ private:
     bool m_running;
     u32 m_total_cycles;
     u8 m_joypad_state;
+    u8 m_joypad_select;  // P1 bits 4-5: button group selection
     std::vector<u8> m_rom_data;
 
     // Timing

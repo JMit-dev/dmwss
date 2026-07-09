@@ -5,7 +5,8 @@
 GameBoy::GameBoy()
     : m_running(false)
     , m_total_cycles(0)
-    , m_joypad_state(0xFF) {
+    , m_joypad_state(0xFF)
+    , m_joypad_select(0x30) {
 
     // Create components in dependency order
     m_scheduler = std::make_unique<Scheduler>();
@@ -112,6 +113,7 @@ void GameBoy::Reset() {
 
     m_total_cycles = 0;
     m_joypad_state = 0xFF;
+    m_joypad_select = 0x30;
 
     m_scheduler->Reset();
     m_memory->Reset();
@@ -162,16 +164,24 @@ void GameBoy::RegisterIOHandlers() {
     // the value in m_io[] array before/after calling these handlers.
 
     // Joypad register (0xFF00 / P1)
+    // m_joypad_state bits (0 = pressed): 0=Right 1=Left 2=Up 3=Down
+    //                                    4=A 5=B 6=Select 7=Start
     m_memory->RegisterIOHandler(0xFF00,
         [this](u16) -> u8 {
-            // Return joypad state
-            // Bits 4-5 select which buttons to read (0=select, 1=not select)
-            // Bits 0-3 are button states (0=pressed, 1=not pressed)
-            return m_joypad_state;
+            // Bits 4-5 select which button group appears in bits 0-3
+            // (0 = group selected); unselected reads as all released
+            u8 result = 0xC0 | m_joypad_select | 0x0F;
+            if ((m_joypad_select & 0x10) == 0) {
+                result &= 0xF0 | (m_joypad_state & 0x0F);         // D-pad
+            }
+            if ((m_joypad_select & 0x20) == 0) {
+                result &= 0xF0 | ((m_joypad_state >> 4) & 0x0F);  // Buttons
+            }
+            return result;
         },
         [this](u16, u8 value) {
             // Only bits 4-5 are writable (button group select)
-            m_joypad_state = (m_joypad_state & 0x0F) | (value & 0x30);
+            m_joypad_select = value & 0x30;
         }
     );
 
