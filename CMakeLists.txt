@@ -43,27 +43,46 @@ add_subdirectory(modules/spdlog)
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 add_subdirectory(modules/nlohmann-json)
 
-# Source files
-file(GLOB_RECURSE SOURCES
-    "src/*.cpp"
-    "src/*.hpp"
+# Core emulation library (platform-agnostic, no Qt dependency)
+file(GLOB_RECURSE CORE_SOURCES
+    "src/core/*.cpp"
+    "src/core/*.hpp"
+    "src/machine/*.cpp"
+    "src/machine/*.hpp"
 )
 
-add_executable(dmwss ${SOURCES})
+add_library(dmwss_core STATIC ${CORE_SOURCES})
+
+target_include_directories(dmwss_core PUBLIC
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(dmwss_core PUBLIC
+    fmt::fmt
+    spdlog::spdlog
+)
+
+# GUI application
+file(GLOB_RECURSE UI_SOURCES
+    "src/ui/*.cpp"
+    "src/ui/*.hpp"
+    "src/platform/*.cpp"
+    "src/platform/*.hpp"
+)
+
+add_executable(dmwss src/main.cpp ${UI_SOURCES})
 
 target_include_directories(dmwss PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/modules/miniaudio
     ${CMAKE_SOURCE_DIR}/modules/opengl
 )
 
 target_link_libraries(dmwss PRIVATE
+    dmwss_core
     Qt6::Core
     Qt6::Widgets
     Qt6::OpenGLWidgets
     glfw
-    fmt::fmt
-    spdlog::spdlog
     nlohmann_json::nlohmann_json
 )
 
@@ -81,3 +100,28 @@ add_custom_command(TARGET dmwss POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:dmwss>/shaders
 )
+
+# Tests - headless blargg test ROM runner
+enable_testing()
+
+add_executable(blargg_runner tests/blargg_runner.cpp)
+target_link_libraries(blargg_runner PRIVATE dmwss_core)
+
+# Register test ROMs with CTest if the (untracked) test-roms directory exists.
+# oam_bug is excluded: it tests the DMG OAM corruption hardware bug, which
+# this emulator does not implement.
+set(TEST_ROM_DIR ${CMAKE_SOURCE_DIR}/test-roms/gb-test-roms)
+if(EXISTS ${TEST_ROM_DIR})
+    file(GLOB BLARGG_ROMS
+        "${TEST_ROM_DIR}/cpu_instrs/individual/*.gb"
+        "${TEST_ROM_DIR}/instr_timing/instr_timing.gb"
+        "${TEST_ROM_DIR}/mem_timing/individual/*.gb"
+        "${TEST_ROM_DIR}/mem_timing-2/rom_singles/*.gb"
+        "${TEST_ROM_DIR}/halt_bug.gb"
+    )
+    foreach(ROM ${BLARGG_ROMS})
+        file(RELATIVE_PATH TEST_NAME ${TEST_ROM_DIR} ${ROM})
+        add_test(NAME "blargg/${TEST_NAME}" COMMAND blargg_runner ${ROM} 7200)
+        set_tests_properties("blargg/${TEST_NAME}" PROPERTIES TIMEOUT 120)
+    endforeach()
+endif()
