@@ -10,6 +10,7 @@
 #include "core/types.hpp"
 #include "machine/gameboy.hpp"
 #include "ui/gl_widget.hpp"
+#include "ui/audio_output.hpp"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -35,6 +36,10 @@ public:
 
         // Create GameBoy instance
         m_gameboy = std::make_unique<GameBoy>();
+
+        // Create audio output
+        m_audio = std::make_unique<AudioOutput>(m_gameboy->GetAPU());
+        m_audio->Start();
 
         // Create frame timer (60 FPS)
         m_frame_timer = new QTimer(this);
@@ -166,6 +171,7 @@ private:
     }
 
     std::unique_ptr<GameBoy> m_gameboy;
+    std::unique_ptr<AudioOutput> m_audio;
     GLWidget* m_gl_widget;
     QTimer* m_frame_timer;
     u8 m_joypad_state;

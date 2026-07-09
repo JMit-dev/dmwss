@@ -39,6 +39,7 @@ public:
     // Component access for debugging
     CPU& GetCPU() { return *m_cpu; }
     PPU& GetPPU() { return *m_ppu; }
+    APU& GetAPU() { return *m_apu; }
     Memory& GetMemory() { return *m_memory; }
 
 private:

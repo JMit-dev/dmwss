@@ -84,6 +84,7 @@ target_link_libraries(dmwss PRIVATE
     Qt6::OpenGLWidgets
     glfw
     nlohmann_json::nlohmann_json
+    ${CMAKE_DL_LIBS}  # miniaudio loads backends at runtime
 )
 
 # Linux-specific Qt6 dependencies
