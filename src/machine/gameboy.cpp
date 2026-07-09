@@ -197,6 +197,20 @@ void GameBoy::RegisterIOHandlers() {
         [](u16, u8) {}                    // Ignore writes
     );
 
+    // DMA - OAM DMA transfer (0xFF46): writing XX copies 0xXX00-0xXX9F
+    // to OAM. Real DMA takes 160 M-cycles with the bus restricted to HRAM;
+    // games spin in an HRAM wait loop anyway, so an instant copy suffices.
+    m_memory->RegisterIOHandler(0xFF46,
+        [](u16) -> u8 { return 0xFF; },
+        [this](u16, u8 value) {
+            u16 source = static_cast<u16>(value) << 8;
+            u8* oam = m_memory->GetOAM();
+            for (u16 i = 0; i < 160; i++) {
+                oam[i] = m_memory->Read(source + i);
+            }
+        }
+    );
+
     // KEY1 - CGB speed switch (0xFF4D)
     m_memory->RegisterIOHandler(0xFF4D,
         [this](u16) -> u8 {
