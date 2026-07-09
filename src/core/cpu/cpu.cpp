@@ -7,6 +7,7 @@ CPU::CPU(Memory& memory, Scheduler& scheduler)
     , m_ime(false)
     , m_ime_scheduled(false)
     , m_halted(false)
+    , m_halt_bug(false)
     , m_stopped(false)
     , m_cycles(0) {
     Reset();
@@ -24,6 +25,7 @@ void CPU::Reset() {
     m_ime = false;
     m_ime_scheduled = false;
     m_halted = false;
+    m_halt_bug = false;
     m_stopped = false;
     m_cycles = 0;
 
@@ -33,18 +35,12 @@ void CPU::Reset() {
 u32 CPU::Step() {
     m_cycles = 0;
 
-    // Handle EI delay - IME gets enabled AFTER the instruction following EI
-    if (m_ime_scheduled) {
-        m_ime = true;
-        m_ime_scheduled = false;
-    }
-
     // Check if we should wake from HALT
     // HALT wakes up when any interrupt is pending (IE & IF != 0), regardless of IME
     if (m_halted) {
         u8 if_reg = m_memory.Read(0xFF0F);
         u8 ie_reg = m_memory.Read(0xFFFF);
-        if ((if_reg & ie_reg) != 0) {
+        if ((if_reg & ie_reg & 0x1F) != 0) {
             m_halted = false;
             spdlog::trace("Waking from HALT, IF={:02X} IE={:02X}", if_reg, ie_reg);
         } else {
@@ -57,8 +53,20 @@ u32 CPU::Step() {
     // Handle interrupts (only if IME is set)
     ServiceInterrupts();
 
+    // Handle EI delay AFTER the interrupt check so that an interrupt cannot
+    // be serviced until the instruction following EI has executed
+    if (m_ime_scheduled) {
+        m_ime = true;
+        m_ime_scheduled = false;
+    }
+
     // Fetch and execute
     u8 opcode = FetchByte();
+    if (UNLIKELY(m_halt_bug)) {
+        // HALT bug: PC fails to increment, so this byte is fetched again
+        m_regs.pc--;
+        m_halt_bug = false;
+    }
     ExecuteInstruction(opcode);
 
     return m_cycles;

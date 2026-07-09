@@ -566,7 +566,14 @@ void CPU::OP_NOP() {
 }
 
 void CPU::OP_HALT() {
-    m_halted = true;
+    // HALT bug: executing HALT with IME disabled while an interrupt is
+    // pending does not halt; instead the byte after HALT is fetched twice
+    u8 pending = m_memory.Read(0xFF0F) & m_memory.Read(0xFFFF) & 0x1F;
+    if (!m_ime && pending != 0) {
+        m_halt_bug = true;
+    } else {
+        m_halted = true;
+    }
     // HALT takes 4 T-cycles (just opcode fetch)
 }
 
@@ -577,6 +584,7 @@ void CPU::OP_STOP() {
 
 void CPU::OP_DI() {
     m_ime = false;
+    m_ime_scheduled = false;  // DI cancels a pending EI
     // DI takes 4 T-cycles (just opcode fetch)
 }
 
