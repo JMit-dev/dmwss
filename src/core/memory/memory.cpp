@@ -210,6 +210,11 @@ u8 Memory::ReadIO(u16 address) const {
         return m_io_read_handlers[offset](address);
     }
 
+    // IF (0xFF0F): upper 3 bits are unimplemented on hardware and read as 1
+    if (address == 0xFF0F) {
+        return m_io[offset] | 0xE0;
+    }
+
     return m_io[offset];
 }
 
