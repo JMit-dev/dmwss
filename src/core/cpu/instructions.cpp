@@ -73,21 +73,27 @@ void CPU::OP_LD_C_A() {
 }
 
 void CPU::OP_LDI_HL_A() {
+    // OAM bug: write plus increment in one M-cycle acts as a single write
+    TriggerOAMBug(m_regs.hl, OAMBugType::WRITE);
     WriteByte(m_regs.hl, m_regs.a);  // WriteByte already adds 4 T-cycles
     m_regs.hl++;
 }
 
 void CPU::OP_LDI_A_HL() {
+    // OAM bug: read plus increment in one M-cycle
+    TriggerOAMBug(m_regs.hl, OAMBugType::READ_INC_DEC);
     m_regs.a = ReadByte(m_regs.hl);  // ReadByte already adds 4 T-cycles
     m_regs.hl++;
 }
 
 void CPU::OP_LDD_HL_A() {
+    TriggerOAMBug(m_regs.hl, OAMBugType::WRITE);
     WriteByte(m_regs.hl, m_regs.a);  // WriteByte already adds 4 T-cycles
     m_regs.hl--;
 }
 
 void CPU::OP_LDD_A_HL() {
+    TriggerOAMBug(m_regs.hl, OAMBugType::READ_INC_DEC);
     m_regs.a = ReadByte(m_regs.hl);  // ReadByte already adds 4 T-cycles
     m_regs.hl--;
 }
@@ -107,6 +113,8 @@ void CPU::OP_LD_SP_HL() {
 }
 
 void CPU::OP_PUSH(u16 reg) {
+    // OAM bug: SP is decremented during the internal cycle
+    TriggerOAMBug(m_regs.sp, OAMBugType::WRITE);
     Tick(4);   // Internal cycle before the writes
     Push(reg); // 8 T-cycles - PUSH takes 16 T-cycles total
 }
@@ -283,11 +291,14 @@ void CPU::OP_ADD_HL_rr(u16 value) {
 }
 
 void CPU::OP_INC_rr(u16& reg) {
+    // OAM bug: the increment unit outputs the value on the address bus
+    TriggerOAMBug(reg, OAMBugType::WRITE);
     reg++;
     Tick(4);  // Internal cycle - INC rr takes 8 T-cycles total
 }
 
 void CPU::OP_DEC_rr(u16& reg) {
+    TriggerOAMBug(reg, OAMBugType::WRITE);
     reg--;
     Tick(4);  // Internal cycle - DEC rr takes 8 T-cycles total
 }

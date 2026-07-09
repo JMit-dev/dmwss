@@ -78,6 +78,12 @@ public:
     bool IsFrameReady() const { return m_frame_ready; }
     void ClearFrameReady() { m_frame_ready = false; }
 
+    // DMG OAM corruption bug: called by the CPU when an instruction
+    // performs a 16-bit increment/decrement (or stack access) with a
+    // value in the 0xFE00-0xFEFF range. Corrupts OAM if the PPU is in
+    // mode 2 (see Pan Docs "OAM Corruption Bug").
+    void TriggerOAMBug(OAMBugType type);
+
 private:
     Memory& m_memory;
     Scheduler& m_scheduler;
@@ -87,6 +93,7 @@ private:
     u32 m_cycle_counter;
     u8 m_scanline;          // LY register (0-153)
     bool m_frame_ready;
+    bool m_first_line;      // First scanline after LCD enable skips OAM scan
 
     // Framebuffer (160x144 pixels, RGBA format)
     std::array<u32, SCREEN_WIDTH * SCREEN_HEIGHT> m_framebuffer;
@@ -119,6 +126,11 @@ private:
 
     // OAM scan
     void ScanOAM();
+
+    // OAM corruption bug helpers (row = 8-byte OAM row, 1-19)
+    void CorruptOAMRead(u32 row);
+    void CorruptOAMWrite(u32 row);
+    void CorruptOAMIncDec(u32 row);
 
     // Tile/pixel helpers
     u8 GetTilePixel(u16 tile_data_addr, u8 x, u8 y);

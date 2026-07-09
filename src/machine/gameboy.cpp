@@ -26,6 +26,13 @@ GameBoy::GameBoy()
         m_timer->Step(cycles);
     });
 
+    // The OAM corruption bug is DMG-only silicon behavior
+    m_cpu->SetOAMBugCallback([this](OAMBugType type) {
+        if (!m_cpu->IsCGBMode()) {
+            m_ppu->TriggerOAMBug(type);
+        }
+    });
+
     RegisterIOHandlers();
 
     spdlog::info("GameBoy system initialized");

@@ -31,6 +31,7 @@ void PPU::Reset() {
     m_cycle_counter = 0;
     m_scanline = 0;
     m_frame_ready = false;
+    m_first_line = false;
     m_sprite_count = 0;
 
     spdlog::debug("PPU reset");
@@ -48,11 +49,12 @@ void PPU::Step(u32 cycles) {
         case Mode::OAM_SCAN: {
             if (m_cycle_counter >= OAM_SCAN_CYCLES) {
                 m_cycle_counter -= OAM_SCAN_CYCLES;
-                
+
                 // Scan OAM for sprites on this line
                 ScanOAM();
-                
+
                 // Move to drawing mode
+                m_first_line = false;
                 SetMode(Mode::DRAWING);
             }
             break;
@@ -164,6 +166,98 @@ void PPU::UpdateStatRegister() {
     }
     
     m_memory.Write(0xFF41, m_stat);
+}
+
+// DMG OAM corruption bug (Pan Docs "OAM Corruption Bug"):
+// OAM is 20 rows of 8 bytes (4 words, 16-bit data bus). During mode 2 the
+// PPU accesses one row per M-cycle; a CPU-side OAM access or 16-bit
+// increment/decrement in the OAM range during that M-cycle corrupts the
+// row the PPU is about to access. Corruption during M-cycle N of mode 2
+// affects row N+1, which is why the first row (objects 0-1) is never
+// corrupted and the trigger during the last M-cycle (N=19) does nothing.
+
+static u16 ReadOAMWord(const u8* oam, u32 row, u32 word) {
+    u32 offset = row * 8 + word * 2;
+    return static_cast<u16>(oam[offset]) | (static_cast<u16>(oam[offset + 1]) << 8);
+}
+
+static void WriteOAMWord(u8* oam, u32 row, u32 word, u16 value) {
+    u32 offset = row * 8 + word * 2;
+    oam[offset] = static_cast<u8>(value & 0xFF);
+    oam[offset + 1] = static_cast<u8>(value >> 8);
+}
+
+void PPU::TriggerOAMBug(OAMBugType type) {
+    if ((m_lcdc & LCDC_LCD_ENABLE) == 0) {
+        return;
+    }
+    if (m_mode != Mode::OAM_SCAN || m_first_line) {
+        return;
+    }
+
+    // The CPU triggers before ticking, so m_cycle_counter is at the start
+    // of the M-cycle in which the access happens
+    u32 row = (m_cycle_counter / 4) + 1;
+    if (row >= 20) {
+        return;
+    }
+
+    switch (type) {
+        case OAMBugType::READ:         CorruptOAMRead(row); break;
+        case OAMBugType::WRITE:        CorruptOAMWrite(row); break;
+        case OAMBugType::READ_INC_DEC: CorruptOAMIncDec(row); break;
+    }
+}
+
+void PPU::CorruptOAMWrite(u32 row) {
+    u8* oam = m_memory.GetOAM();
+
+    u16 a = ReadOAMWord(oam, row, 0);
+    u16 b = ReadOAMWord(oam, row - 1, 0);
+    u16 c = ReadOAMWord(oam, row - 1, 2);
+    WriteOAMWord(oam, row, 0, ((a ^ c) & (b ^ c)) ^ c);
+
+    // Last three words are copied from the preceding row
+    for (u32 word = 1; word < 4; word++) {
+        WriteOAMWord(oam, row, word, ReadOAMWord(oam, row - 1, word));
+    }
+}
+
+void PPU::CorruptOAMRead(u32 row) {
+    u8* oam = m_memory.GetOAM();
+
+    u16 a = ReadOAMWord(oam, row, 0);
+    u16 b = ReadOAMWord(oam, row - 1, 0);
+    u16 c = ReadOAMWord(oam, row - 1, 2);
+    WriteOAMWord(oam, row, 0, b | (a & c));
+
+    for (u32 word = 1; word < 4; word++) {
+        WriteOAMWord(oam, row, word, ReadOAMWord(oam, row - 1, word));
+    }
+}
+
+void PPU::CorruptOAMIncDec(u32 row) {
+    u8* oam = m_memory.GetOAM();
+
+    // The complex pattern is skipped for the first four rows and the last
+    if (row >= 4 && row < 19) {
+        u16 a = ReadOAMWord(oam, row - 2, 0);
+        u16 b = ReadOAMWord(oam, row - 1, 0);
+        u16 c = ReadOAMWord(oam, row, 0);
+        u16 d = ReadOAMWord(oam, row - 1, 2);
+        WriteOAMWord(oam, row - 1, 0, (b & (a | c | d)) | (a & c & d));
+
+        // The (corrupted) preceding row is copied to the current row and
+        // to two rows before it
+        for (u32 word = 0; word < 4; word++) {
+            u16 value = ReadOAMWord(oam, row - 1, word);
+            WriteOAMWord(oam, row, word, value);
+            WriteOAMWord(oam, row - 2, word, value);
+        }
+    }
+
+    // A normal read corruption applies regardless
+    CorruptOAMRead(row);
 }
 
 void PPU::ScanOAM() {
@@ -406,7 +500,30 @@ void PPU::RegisterIOHandlers() {
     // LCDC - LCD Control
     m_memory.RegisterIOHandler(0xFF40,
         [this](u16) { return m_lcdc; },
-        [this](u16, u8 value) { m_lcdc = value; }
+        [this](u16, u8 value) {
+            bool was_enabled = (m_lcdc & LCDC_LCD_ENABLE) != 0;
+            m_lcdc = value;
+            bool now_enabled = (m_lcdc & LCDC_LCD_ENABLE) != 0;
+
+            if (was_enabled && !now_enabled) {
+                // LCD off: LY resets to 0 and STAT reports mode 0
+                m_scanline = 0;
+                m_cycle_counter = 0;
+                m_mode = Mode::HBLANK;
+                m_first_line = false;
+                m_stat &= ~STAT_MODE_FLAG;
+            } else if (!was_enabled && now_enabled) {
+                // LCD on: the first scanline starts 4 dots in (LY flips
+                // to 1 exactly 452 dots after the enabling write) and
+                // skips OAM scan - STAT reports mode 0 until drawing
+                m_scanline = 0;
+                m_cycle_counter = 4;
+                m_mode = Mode::OAM_SCAN;
+                m_first_line = true;
+                m_stat &= ~STAT_MODE_FLAG;
+                UpdateStatRegister();
+            }
+        }
     );
     
     // STAT - LCD Status

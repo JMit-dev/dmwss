@@ -31,6 +31,11 @@ public:
     using TickCallback = std::function<void(u32)>;
     void SetTickCallback(TickCallback callback) { m_tick = std::move(callback); }
 
+    // DMG OAM bug: invoked when an instruction increments/decrements a
+    // 16-bit value (or accesses the stack) while it is in 0xFE00-0xFEFF
+    using OAMBugCallback = std::function<void(OAMBugType)>;
+    void SetOAMBugCallback(OAMBugCallback callback) { m_oam_bug = std::move(callback); }
+
     // Execute one instruction
     u32 Step();
 
@@ -111,6 +116,16 @@ private:
     u32 m_cycles;      // Cycle counter for current instruction
 
     TickCallback m_tick;
+    OAMBugCallback m_oam_bug;
+
+    // Fire the OAM bug callback if a 16-bit value about to be
+    // incremented/decremented (or used as a stack address) is in OAM range.
+    // Must be called before the Tick of the M-cycle the access occurs in.
+    FORCE_INLINE void TriggerOAMBug(u16 value, OAMBugType type) {
+        if (UNLIKELY((value & 0xFF00) == 0xFE00) && m_oam_bug) {
+            m_oam_bug(type);
+        }
+    }
 
     // Flag manipulation helpers
     FORCE_INLINE bool GetFlag(u8 flag) const {
@@ -174,12 +189,20 @@ private:
 
     // Stack operations - hardware pushes high byte first, pops low byte first
     FORCE_INLINE void Push(u16 value) {
+        // First write also decrements SP in its M-cycle; the second is a
+        // plain write (both act as OAM bug writes)
+        TriggerOAMBug(m_regs.sp - 1, OAMBugType::WRITE);
         WriteByte(--m_regs.sp, static_cast<u8>(value >> 8));
+        TriggerOAMBug(m_regs.sp - 1, OAMBugType::WRITE);
         WriteByte(--m_regs.sp, static_cast<u8>(value & 0xFF));
     }
 
     FORCE_INLINE u16 Pop() {
+        // First read increments SP in the same M-cycle; the second read's
+        // glitched write does not occur on hardware
+        TriggerOAMBug(m_regs.sp, OAMBugType::READ_INC_DEC);
         u8 low = ReadByte(m_regs.sp++);
+        TriggerOAMBug(m_regs.sp, OAMBugType::READ);
         u8 high = ReadByte(m_regs.sp++);
         return static_cast<u16>(low) | (static_cast<u16>(high) << 8);
     }

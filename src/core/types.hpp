@@ -53,3 +53,10 @@ constexpr u8 set_bit(u8 value, u8 bit, bool set) {
 constexpr s16 sign_extend_8(u8 value) {
     return static_cast<s16>(static_cast<s8>(value));
 }
+
+// DMG OAM corruption bug access types (see PPU::TriggerOAMBug)
+enum class OAMBugType : u8 {
+    READ,          // OAM read during mode 2
+    WRITE,         // OAM write or lone 16-bit increment/decrement
+    READ_INC_DEC   // OAM read and increment/decrement in the same M-cycle
+};
