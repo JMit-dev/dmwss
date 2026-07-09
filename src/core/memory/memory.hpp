@@ -57,6 +57,11 @@ public:
     // Load ROM data
     bool LoadROM(const u8* data, size_t size);
 
+    // Battery-backed cartridge RAM persistence
+    bool HasBattery() const { return m_has_battery; }
+    bool SaveCartRAM(const std::string& path);
+    bool LoadCartRAM(const std::string& path);
+
     // Direct memory access (for debugging/testing)
     u8* GetWRAM() { return m_wram.data(); }
     u8* GetVRAM() { return m_vram.data(); }
@@ -93,6 +98,7 @@ private:
 
     // Memory Bank Controller (for ROM banking)
     std::unique_ptr<MBC> m_mbc;
+    bool m_has_battery = false;
 
     // Initialize page tables
     void InitializePageTables();

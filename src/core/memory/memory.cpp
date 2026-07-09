@@ -196,9 +196,36 @@ bool Memory::LoadROM(const u8* data, size_t size) {
         return false;
     }
 
+    // Battery-backed cartridge types keep their RAM across power cycles
+    switch (cartridge_type) {
+        case 0x03:  // MBC1+RAM+BATTERY
+        case 0x06:  // MBC2+BATTERY
+        case 0x09:  // ROM+RAM+BATTERY
+        case 0x0D:  // MMM01+RAM+BATTERY
+        case 0x0F:  // MBC3+TIMER+BATTERY
+        case 0x10:  // MBC3+TIMER+RAM+BATTERY
+        case 0x13:  // MBC3+RAM+BATTERY
+        case 0x1B:  // MBC5+RAM+BATTERY
+        case 0x1E:  // MBC5+RUMBLE+RAM+BATTERY
+        case 0xFF:  // HuC1+RAM+BATTERY
+            m_has_battery = true;
+            break;
+        default:
+            m_has_battery = false;
+            break;
+    }
+
     spdlog::info("ROM loaded successfully, cartridge type: 0x{:02X}, size: {} bytes",
                  cartridge_type, size);
     return true;
+}
+
+bool Memory::SaveCartRAM(const std::string& path) {
+    return m_mbc ? m_mbc->SaveRAM(path) : false;
+}
+
+bool Memory::LoadCartRAM(const std::string& path) {
+    return m_mbc ? m_mbc->LoadRAM(path) : false;
 }
 
 u8 Memory::ReadIO(u16 address) const {

@@ -3,6 +3,21 @@
 #include <fstream>
 #include <cstring>
 
+// External RAM size from cartridge header byte 0x149
+static size_t RAMSizeFromHeader(const u8* rom_data, size_t rom_size) {
+    if (rom_size < 0x150) {
+        return 0;
+    }
+    switch (rom_data[0x149]) {
+        case 0x01: return 2 * 1024;
+        case 0x02: return 8 * 1024;
+        case 0x03: return 32 * 1024;
+        case 0x04: return 128 * 1024;
+        case 0x05: return 64 * 1024;
+        default:   return 0;
+    }
+}
+
 std::unique_ptr<MBC> MBC::Create(u8 cartridge_type, const u8* rom_data, size_t rom_size) {
     switch (cartridge_type) {
         case 0x00:  // ROM ONLY
@@ -87,10 +102,11 @@ MBC1::MBC1(const u8* rom_data, size_t rom_size) {
     m_rom.resize(rom_size);
     std::memcpy(m_rom.data(), rom_data, rom_size);
 
-    // Allocate RAM (32KB max)
-    m_ram.resize(32 * 1024, 0);
+    // Allocate RAM per the cartridge header so .sav files match the cart
+    m_ram.resize(RAMSizeFromHeader(rom_data, rom_size), 0);
 
-    spdlog::info("MBC1 initialized with ROM size: {} bytes", rom_size);
+    spdlog::info("MBC1 initialized with ROM size: {} bytes, RAM: {} bytes",
+                 rom_size, m_ram.size());
 }
 
 u32 MBC1::GetROMBankOffset() const {
@@ -188,10 +204,11 @@ MBC3::MBC3(const u8* rom_data, size_t rom_size, bool has_rtc)
     m_rom.resize(rom_size);
     std::memcpy(m_rom.data(), rom_data, rom_size);
 
-    // Allocate RAM (32KB max)
-    m_ram.resize(32 * 1024, 0);
+    // Allocate RAM per the cartridge header so .sav files match the cart
+    m_ram.resize(RAMSizeFromHeader(rom_data, rom_size), 0);
 
-    spdlog::info("MBC3 initialized with ROM size: {} bytes, RTC: {}", rom_size, has_rtc);
+    spdlog::info("MBC3 initialized with ROM size: {} bytes, RAM: {} bytes, RTC: {}",
+                 rom_size, m_ram.size(), has_rtc);
 }
 
 u32 MBC3::GetROMBankOffset() const {
@@ -306,10 +323,11 @@ MBC5::MBC5(const u8* rom_data, size_t rom_size) {
     m_rom.resize(rom_size);
     std::memcpy(m_rom.data(), rom_data, rom_size);
 
-    // Allocate RAM (128KB max)
-    m_ram.resize(128 * 1024, 0);
+    // Allocate RAM per the cartridge header so .sav files match the cart
+    m_ram.resize(RAMSizeFromHeader(rom_data, rom_size), 0);
 
-    spdlog::info("MBC5 initialized with ROM size: {} bytes", rom_size);
+    spdlog::info("MBC5 initialized with ROM size: {} bytes, RAM: {} bytes",
+                 rom_size, m_ram.size());
 }
 
 u32 MBC5::GetROMBankOffset() const {

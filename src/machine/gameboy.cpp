@@ -1,5 +1,6 @@
 #include "gameboy.hpp"
 #include <spdlog/spdlog.h>
+#include <filesystem>
 #include <fstream>
 
 GameBoy::GameBoy()
@@ -39,6 +40,20 @@ GameBoy::GameBoy()
     spdlog::info("GameBoy system initialized");
 }
 
+GameBoy::~GameBoy() {
+    SaveBattery();
+}
+
+void GameBoy::SaveBattery() {
+    if (!m_save_path.empty() && m_memory->HasBattery()) {
+        if (m_memory->SaveCartRAM(m_save_path)) {
+            spdlog::info("Battery RAM saved to {}", m_save_path);
+        } else {
+            spdlog::error("Failed to save battery RAM to {}", m_save_path);
+        }
+    }
+}
+
 bool GameBoy::LoadROM(const std::string& path) {
     spdlog::info("Loading ROM: {}", path);
 
@@ -58,7 +73,17 @@ bool GameBoy::LoadROM(const std::string& path) {
         return false;
     }
 
-    return LoadROM(m_rom_data);
+    if (!LoadROM(m_rom_data)) {
+        return false;
+    }
+
+    // Battery RAM lives in a .sav file next to the ROM
+    m_save_path = std::filesystem::path(path).replace_extension(".sav").string();
+    if (m_memory->HasBattery() && m_memory->LoadCartRAM(m_save_path)) {
+        spdlog::info("Battery RAM loaded from {}", m_save_path);
+    }
+
+    return true;
 }
 
 bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
@@ -66,6 +91,10 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
         spdlog::error("ROM too small (< 0x150 bytes)");
         return false;
     }
+
+    // Persist the previous game's battery RAM before replacing it
+    SaveBattery();
+    m_save_path.clear();
 
     m_rom_data = rom_data;
 

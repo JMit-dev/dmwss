@@ -13,11 +13,14 @@
 class GameBoy {
 public:
     GameBoy();
-    ~GameBoy() = default;
+    ~GameBoy();
 
     // ROM loading
     bool LoadROM(const std::string& path);
     bool LoadROM(const std::vector<u8>& rom_data);
+
+    // Persist battery-backed cartridge RAM (no-op without a battery cart)
+    void SaveBattery();
 
     // System control
     void Reset();
@@ -57,6 +60,7 @@ private:
     u8 m_joypad_state;
     u8 m_joypad_select;  // P1 bits 4-5: button group selection
     std::vector<u8> m_rom_data;
+    std::string m_save_path;  // Battery RAM file (.sav next to the ROM)
 
     // Timing
     static constexpr u32 CYCLES_PER_FRAME = 70224;  // ~59.73 Hz
