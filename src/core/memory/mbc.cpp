@@ -1,21 +1,25 @@
 #include "mbc.hpp"
+#include "../../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 #include <fstream>
 #include <cstring>
 
-// External RAM size from cartridge header byte 0x149
+// External RAM size from cartridge header byte 0x149. Some carts
+// (including blargg's test ROMs) declare no RAM but still use it, so
+// allocate at least one 8KB bank as a floor.
 static size_t RAMSizeFromHeader(const u8* rom_data, size_t rom_size) {
-    if (rom_size < 0x150) {
-        return 0;
+    size_t declared = 0;
+    if (rom_size >= 0x150) {
+        switch (rom_data[0x149]) {
+            case 0x01: declared = 2 * 1024; break;
+            case 0x02: declared = 8 * 1024; break;
+            case 0x03: declared = 32 * 1024; break;
+            case 0x04: declared = 128 * 1024; break;
+            case 0x05: declared = 64 * 1024; break;
+            default: break;
+        }
     }
-    switch (rom_data[0x149]) {
-        case 0x01: return 2 * 1024;
-        case 0x02: return 8 * 1024;
-        case 0x03: return 32 * 1024;
-        case 0x04: return 128 * 1024;
-        case 0x05: return 64 * 1024;
-        default:   return 0;
-    }
+    return declared > 8 * 1024 ? declared : 8 * 1024;
 }
 
 std::unique_ptr<MBC> MBC::Create(u8 cartridge_type, const u8* rom_data, size_t rom_size) {
@@ -399,4 +403,70 @@ bool MBC5::LoadRAM(const std::string& path) {
     if (!file) return false;
     file.read(reinterpret_cast<char*>(m_ram.data()), m_ram.size());
     return file.good();
+}
+
+// ============================================================================
+// Save states
+// ============================================================================
+
+void MBC::SaveState(StateBuffer& state) const {
+    state.Write(m_ram_enabled);
+    state.WriteBytes(m_ram.data(), m_ram.size());
+}
+
+bool MBC::LoadState(StateBuffer& state) {
+    return state.Read(m_ram_enabled) &&
+           state.ReadBytes(m_ram.data(), m_ram.size());
+}
+
+void MBC1::SaveState(StateBuffer& state) const {
+    MBC::SaveState(state);
+    state.Write(m_rom_bank);
+    state.Write(m_ram_bank);
+    state.Write(m_banking_mode);
+}
+
+bool MBC1::LoadState(StateBuffer& state) {
+    return MBC::LoadState(state) &&
+           state.Read(m_rom_bank) &&
+           state.Read(m_ram_bank) &&
+           state.Read(m_banking_mode);
+}
+
+void MBC3::SaveState(StateBuffer& state) const {
+    MBC::SaveState(state);
+    state.Write(m_rom_bank);
+    state.Write(m_ram_bank);
+    state.Write(m_rtc_seconds);
+    state.Write(m_rtc_minutes);
+    state.Write(m_rtc_hours);
+    state.Write(m_rtc_days_low);
+    state.Write(m_rtc_days_high);
+    state.Write(m_rtc_latch_data);
+    state.Write(m_rtc_latched);
+}
+
+bool MBC3::LoadState(StateBuffer& state) {
+    return MBC::LoadState(state) &&
+           state.Read(m_rom_bank) &&
+           state.Read(m_ram_bank) &&
+           state.Read(m_rtc_seconds) &&
+           state.Read(m_rtc_minutes) &&
+           state.Read(m_rtc_hours) &&
+           state.Read(m_rtc_days_low) &&
+           state.Read(m_rtc_days_high) &&
+           state.Read(m_rtc_latch_data) &&
+           state.Read(m_rtc_latched);
+}
+
+void MBC5::SaveState(StateBuffer& state) const {
+    MBC::SaveState(state);
+    state.Write(m_rom_bank);
+    state.Write(m_ram_bank);
+}
+
+bool MBC5::LoadState(StateBuffer& state) {
+    return MBC::LoadState(state) &&
+           state.Read(m_rom_bank) &&
+           state.Read(m_ram_bank);
 }

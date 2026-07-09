@@ -10,7 +10,9 @@
 // Exit code: 0 = pass, 1 = fail or timeout, 2 = usage/load error
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
+#include <vector>
 #include <spdlog/spdlog.h>
 #include "machine/gameboy.hpp"
 
@@ -23,8 +25,20 @@ int main(int argc, char* argv[]) {
 
     const int max_frames = (argc > 2) ? std::atoi(argv[2]) : 60 * 60;  // 60s emulated default
 
+    // Load via the buffer overload so no .sav/.state files are created or
+    // read next to the test ROMs (stale battery RAM would leak previous
+    // results into the next run)
+    std::ifstream file(argv[1], std::ios::binary | std::ios::ate);
+    if (!file) {
+        std::fprintf(stderr, "failed to open rom: %s\n", argv[1]);
+        return 2;
+    }
+    std::vector<u8> rom(static_cast<size_t>(file.tellg()));
+    file.seekg(0);
+    file.read(reinterpret_cast<char*>(rom.data()), rom.size());
+
     GameBoy gameboy;
-    if (!gameboy.LoadROM(std::string(argv[1]))) {
+    if (!gameboy.LoadROM(rom)) {
         std::fprintf(stderr, "failed to load rom: %s\n", argv[1]);
         return 2;
     }
