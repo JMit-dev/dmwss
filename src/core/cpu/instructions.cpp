@@ -578,6 +578,17 @@ void CPU::OP_HALT() {
 }
 
 void CPU::OP_STOP() {
+    // STOP consumes the following byte
+    m_regs.pc++;
+
+    // On CGB, STOP with KEY1 bit 0 armed performs a speed switch
+    // instead of stopping
+    if (m_cgb_mode && m_speed_armed) {
+        m_double_speed = !m_double_speed;
+        m_speed_armed = false;
+        return;
+    }
+
     m_stopped = true;
     // STOP takes 4 T-cycles (just opcode fetch)
 }

@@ -4,6 +4,7 @@
 #include "../core/memory/memory.hpp"
 #include "../core/cpu/cpu.hpp"
 #include "../core/ppu/ppu.hpp"
+#include "../core/apu/apu.hpp"
 #include "../core/timer/timer.hpp"
 #include <string>
 #include <vector>
@@ -46,6 +47,7 @@ private:
     std::unique_ptr<Memory> m_memory;
     std::unique_ptr<CPU> m_cpu;
     std::unique_ptr<PPU> m_ppu;
+    std::unique_ptr<APU> m_apu;
     std::unique_ptr<Timer> m_timer;
 
     // State

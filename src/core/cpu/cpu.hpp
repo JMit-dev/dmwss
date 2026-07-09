@@ -51,6 +51,13 @@ public:
     bool IsIMEEnabled() const { return m_ime; }
     void SetIME(bool enabled) { m_ime = enabled; }
 
+    // CGB mode and double-speed switching (KEY1 / STOP)
+    void SetCGBMode(bool enabled) { m_cgb_mode = enabled; }
+    bool IsCGBMode() const { return m_cgb_mode; }
+    bool IsDoubleSpeed() const { return m_double_speed; }
+    bool IsSpeedSwitchArmed() const { return m_speed_armed; }
+    void ArmSpeedSwitch(bool armed) { m_speed_armed = armed; }
+
 private:
     // Registers with union for efficient 8/16-bit access
     struct Registers {
@@ -98,6 +105,9 @@ private:
     bool m_halted;     // CPU halted
     bool m_halt_bug;   // HALT bug: next opcode byte is fetched twice
     bool m_stopped;    // CPU stopped
+    bool m_cgb_mode;   // Running as a Game Boy Color
+    bool m_double_speed;  // CGB double-speed mode active
+    bool m_speed_armed;   // KEY1 bit 0: speed switch armed for next STOP
     u32 m_cycles;      // Cycle counter for current instruction
 
     TickCallback m_tick;

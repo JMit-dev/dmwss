@@ -9,16 +9,27 @@ CPU::CPU(Memory& memory, Scheduler& scheduler)
     , m_halted(false)
     , m_halt_bug(false)
     , m_stopped(false)
+    , m_cgb_mode(false)
+    , m_double_speed(false)
+    , m_speed_armed(false)
     , m_cycles(0) {
     Reset();
 }
 
 void CPU::Reset() {
     // Initial register values after boot ROM
-    m_regs.af = 0x01B0;
-    m_regs.bc = 0x0013;
-    m_regs.de = 0x00D8;
-    m_regs.hl = 0x014D;
+    if (m_cgb_mode) {
+        // CGB boot: A=0x11 identifies Game Boy Color to software
+        m_regs.af = 0x1180;
+        m_regs.bc = 0x0000;
+        m_regs.de = 0xFF56;
+        m_regs.hl = 0x000D;
+    } else {
+        m_regs.af = 0x01B0;
+        m_regs.bc = 0x0013;
+        m_regs.de = 0x00D8;
+        m_regs.hl = 0x014D;
+    }
     m_regs.sp = 0xFFFE;
     m_regs.pc = 0x0100;  // Start of cartridge
 
@@ -27,6 +38,8 @@ void CPU::Reset() {
     m_halted = false;
     m_halt_bug = false;
     m_stopped = false;
+    m_double_speed = false;
+    m_speed_armed = false;
     m_cycles = 0;
 
     spdlog::debug("CPU reset");

@@ -12,12 +12,17 @@ GameBoy::GameBoy()
     m_memory = std::make_unique<Memory>();
     m_cpu = std::make_unique<CPU>(*m_memory, *m_scheduler);
     m_ppu = std::make_unique<PPU>(*m_memory, *m_scheduler);
+    m_apu = std::make_unique<APU>(*m_memory);
     m_timer = std::make_unique<Timer>(*m_memory, *m_scheduler);
 
     // The CPU drives time: PPU and Timer advance on every memory access so
-    // mid-instruction reads/writes observe them at the correct cycle
+    // mid-instruction reads/writes observe them at the correct cycle.
+    // In CGB double-speed mode the PPU and APU run at half the CPU rate,
+    // while the Timer stays on the CPU clock.
     m_cpu->SetTickCallback([this](u32 cycles) {
-        m_ppu->Step(cycles);
+        u32 real_cycles = m_cpu->IsDoubleSpeed() ? (cycles / 2) : cycles;
+        m_ppu->Step(real_cycles);
+        m_apu->Step(real_cycles);
         m_timer->Step(cycles);
     });
 
@@ -68,6 +73,14 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
     u8 rom_size = m_rom_data[0x148];
     u8 ram_size = m_rom_data[0x149];
 
+    // Boot as a CGB only for CGB-exclusive carts (header 0x143 == 0xC0);
+    // dual-mode carts (0x80) run in the emulator's native DMG mode
+    bool cgb_only = (m_rom_data[0x143] == 0xC0);
+    m_cpu->SetCGBMode(cgb_only);
+    if (cgb_only) {
+        spdlog::info("CGB-only cartridge, booting in CGB mode");
+    }
+
     if (!title.empty()) {
         spdlog::info("ROM Title: {}", title);
     }
@@ -97,6 +110,7 @@ void GameBoy::Reset() {
     m_memory->Reset();
     m_cpu->Reset();
     m_ppu->Reset();
+    m_apu->Reset();
     m_timer->Reset();
 
     m_running = true;
@@ -121,8 +135,10 @@ void GameBoy::RunFrame() {
     u32 frame_cycles = 0;
 
     // Run until we've completed a full frame worth of cycles
-    // (PPU and Timer tick via the CPU's callback)
-    while (frame_cycles < CYCLES_PER_FRAME) {
+    // (PPU and Timer tick via the CPU's callback). In double-speed mode
+    // the CPU executes twice as many cycles per frame.
+    u32 frame_cycle_target = CYCLES_PER_FRAME * (m_cpu->IsDoubleSpeed() ? 2 : 1);
+    while (frame_cycles < frame_cycle_target) {
         u32 cycles = m_cpu->Step();
 
         m_scheduler->Advance(cycles);
@@ -164,5 +180,21 @@ void GameBoy::RegisterIOHandlers() {
         [](u16, u8) {}                    // Ignore writes
     );
 
-    // PPU and Timer register their own handlers in their constructors
+    // KEY1 - CGB speed switch (0xFF4D)
+    m_memory->RegisterIOHandler(0xFF4D,
+        [this](u16) -> u8 {
+            if (!m_cpu->IsCGBMode()) {
+                return 0xFF;
+            }
+            return (m_cpu->IsDoubleSpeed() ? 0x80 : 0x00) | 0x7E |
+                   (m_cpu->IsSpeedSwitchArmed() ? 0x01 : 0x00);
+        },
+        [this](u16, u8 value) {
+            if (m_cpu->IsCGBMode()) {
+                m_cpu->ArmSpeedSwitch((value & 0x01) != 0);
+            }
+        }
+    );
+
+    // PPU, APU and Timer register their own handlers in their constructors
 }
