@@ -1,4 +1,5 @@
 #include "gameboy.hpp"
+#include "savestate.hpp"
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <fstream>
@@ -257,4 +258,85 @@ void GameBoy::RegisterIOHandlers() {
     );
 
     // PPU, APU and Timer register their own handlers in their constructors
+}
+
+// Save state file layout: magic, version, then each component in order
+static constexpr u32 STATE_MAGIC = 0x53574D44;  // "DMWS"
+static constexpr u32 STATE_VERSION = 1;
+
+bool GameBoy::SaveStateToFile() {
+    if (!m_running || m_save_path.empty()) {
+        spdlog::error("Cannot save state: no ROM loaded from a file");
+        return false;
+    }
+
+    StateBuffer state;
+    state.Write(STATE_MAGIC);
+    state.Write(STATE_VERSION);
+    state.Write(m_total_cycles);
+    state.Write(m_joypad_select);
+    m_cpu->SaveState(state);
+    m_memory->SaveState(state);
+    m_ppu->SaveState(state);
+    m_apu->SaveState(state);
+    m_timer->SaveState(state);
+
+    std::string path = std::filesystem::path(m_save_path)
+                           .replace_extension(".state").string();
+    std::ofstream file(path, std::ios::binary);
+    if (!file) {
+        spdlog::error("Failed to open state file for writing: {}", path);
+        return false;
+    }
+    file.write(reinterpret_cast<const char*>(state.Data().data()),
+               state.Data().size());
+    spdlog::info("State saved to {}", path);
+    return file.good();
+}
+
+bool GameBoy::LoadStateFromFile() {
+    if (!m_running || m_save_path.empty()) {
+        spdlog::error("Cannot load state: no ROM loaded from a file");
+        return false;
+    }
+
+    std::string path = std::filesystem::path(m_save_path)
+                           .replace_extension(".state").string();
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        spdlog::error("No state file at {}", path);
+        return false;
+    }
+    std::vector<u8> data(static_cast<size_t>(file.tellg()));
+    file.seekg(0);
+    if (!file.read(reinterpret_cast<char*>(data.data()), data.size())) {
+        spdlog::error("Failed to read state file: {}", path);
+        return false;
+    }
+
+    StateBuffer state;
+    state.SetData(std::move(data));
+
+    u32 magic = 0;
+    u32 version = 0;
+    if (!state.Read(magic) || magic != STATE_MAGIC ||
+        !state.Read(version) || version != STATE_VERSION) {
+        spdlog::error("Invalid or incompatible state file: {}", path);
+        return false;
+    }
+
+    bool ok = state.Read(m_total_cycles) &&
+              state.Read(m_joypad_select) &&
+              m_cpu->LoadState(state) &&
+              m_memory->LoadState(state) &&
+              m_ppu->LoadState(state) &&
+              m_apu->LoadState(state) &&
+              m_timer->LoadState(state);
+    if (!ok) {
+        spdlog::error("State file is truncated or corrupt: {}", path);
+        return false;
+    }
+
+    spdlog::info("State loaded from {}", path);
+    return true;
 }

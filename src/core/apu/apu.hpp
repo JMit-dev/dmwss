@@ -4,6 +4,8 @@
 #include <array>
 #include <atomic>
 
+class StateBuffer;
+
 // APU: four channels (square+sweep, square, wave, noise) with register
 // behavior accurate enough for blargg's dmg_sound tests, plus stereo
 // sample generation into a lock-free ring buffer for the audio backend.
@@ -23,6 +25,10 @@ public:
     // single consumer).
     static constexpr u32 OUTPUT_SAMPLE_RATE = 48000;
     size_t ReadSamples(s16* out, size_t max_frames);
+
+    // Save states
+    void SaveState(StateBuffer& state) const;
+    bool LoadState(StateBuffer& state);
 
 private:
     // Frame sequencer: 512 Hz. Steps 0/2/4/6 clock length, 2/6 clock

@@ -3,6 +3,8 @@
 #include "../memory/memory.hpp"
 #include "../scheduler/scheduler.hpp"
 
+class StateBuffer;
+
 class CPU {
 public:
     // CPU Flags (in F register)
@@ -55,6 +57,10 @@ public:
     // IME (Interrupt Master Enable)
     bool IsIMEEnabled() const { return m_ime; }
     void SetIME(bool enabled) { m_ime = enabled; }
+
+    // Save states
+    void SaveState(StateBuffer& state) const;
+    bool LoadState(StateBuffer& state);
 
     // CGB mode and double-speed switching (KEY1 / STOP)
     void SetCGBMode(bool enabled) { m_cgb_mode = enabled; }

@@ -1,4 +1,5 @@
 #include "apu.hpp"
+#include "../../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 #include <cstring>
 
@@ -523,4 +524,59 @@ void APU::RegisterIOHandlers() {
             [this](u16 addr, u8 value) { WriteRegister(addr, value); }
         );
     }
+}
+
+void APU::SaveState(StateBuffer& state) const {
+    state.Write(m_power);
+    state.Write(m_fs_counter);
+    state.Write(m_fs_step);
+    state.WriteBytes(m_ch, sizeof(m_ch));
+    state.WriteBytes(m_duty, sizeof(m_duty));
+    state.WriteBytes(m_duty_pos, sizeof(m_duty_pos));
+    state.Write(m_sweep_period);
+    state.Write(m_sweep_shift);
+    state.Write(m_sweep_negate);
+    state.Write(m_sweep_shadow);
+    state.Write(m_sweep_timer);
+    state.Write(m_sweep_enabled);
+    state.Write(m_sweep_negate_used);
+    state.WriteBytes(m_wave_ram, sizeof(m_wave_ram));
+    state.Write(m_wave_pos);
+    state.Write(m_wave_sample);
+    state.Write(m_wave_volume);
+    state.Write(m_lfsr);
+    state.Write(m_nr50);
+    state.Write(m_nr51);
+    state.WriteBytes(m_regs, sizeof(m_regs));
+}
+
+bool APU::LoadState(StateBuffer& state) {
+    bool ok = state.Read(m_power) &&
+              state.Read(m_fs_counter) &&
+              state.Read(m_fs_step) &&
+              state.ReadBytes(m_ch, sizeof(m_ch)) &&
+              state.ReadBytes(m_duty, sizeof(m_duty)) &&
+              state.ReadBytes(m_duty_pos, sizeof(m_duty_pos)) &&
+              state.Read(m_sweep_period) &&
+              state.Read(m_sweep_shift) &&
+              state.Read(m_sweep_negate) &&
+              state.Read(m_sweep_shadow) &&
+              state.Read(m_sweep_timer) &&
+              state.Read(m_sweep_enabled) &&
+              state.Read(m_sweep_negate_used) &&
+              state.ReadBytes(m_wave_ram, sizeof(m_wave_ram)) &&
+              state.Read(m_wave_pos) &&
+              state.Read(m_wave_sample) &&
+              state.Read(m_wave_volume) &&
+              state.Read(m_lfsr) &&
+              state.Read(m_nr50) &&
+              state.Read(m_nr51) &&
+              state.ReadBytes(m_regs, sizeof(m_regs));
+    // Audio ring buffer restarts empty
+    m_wave_just_accessed = false;
+    m_wave_fetch_dist = 0;
+    m_sample_counter = 0;
+    m_ring_write.store(0);
+    m_ring_read.store(0);
+    return ok;
 }

@@ -1,4 +1,5 @@
 #include "memory.hpp"
+#include "../../machine/savestate.hpp"
 #include "mbc.hpp"
 #include <spdlog/spdlog.h>
 #include <cstring>
@@ -275,4 +276,29 @@ void Memory::RequestInterrupt(u8 interrupt_bit) {
     // IF register is at offset 0x0F in the I/O region
     m_io[0x0F] |= interrupt_bit;
     spdlog::trace("Interrupt requested: bit 0x{:02X}, IF now 0x{:02X}", interrupt_bit, m_io[0x0F]);
+}
+
+void Memory::SaveState(StateBuffer& state) const {
+    state.WriteBytes(m_wram.data(), m_wram.size());
+    state.WriteBytes(m_vram.data(), m_vram.size());
+    state.WriteBytes(m_oam.data(), m_oam.size());
+    state.WriteBytes(m_hram.data(), m_hram.size());
+    state.WriteBytes(m_io.data(), m_io.size());
+    state.Write(m_ie_register);
+    if (m_mbc) {
+        m_mbc->SaveState(state);
+    }
+}
+
+bool Memory::LoadState(StateBuffer& state) {
+    bool ok = state.ReadBytes(m_wram.data(), m_wram.size()) &&
+              state.ReadBytes(m_vram.data(), m_vram.size()) &&
+              state.ReadBytes(m_oam.data(), m_oam.size()) &&
+              state.ReadBytes(m_hram.data(), m_hram.size()) &&
+              state.ReadBytes(m_io.data(), m_io.size()) &&
+              state.Read(m_ie_register);
+    if (ok && m_mbc) {
+        ok = m_mbc->LoadState(state);
+    }
+    return ok;
 }

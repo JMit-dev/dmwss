@@ -1,4 +1,5 @@
 #include "ppu.hpp"
+#include "../../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <cstring>
@@ -587,4 +588,46 @@ void PPU::RegisterIOHandlers() {
         [this](u16) { return m_wx; },
         [this](u16, u8 value) { m_wx = value; }
     );
+}
+
+void PPU::SaveState(StateBuffer& state) const {
+    state.Write(m_mode);
+    state.Write(m_cycle_counter);
+    state.Write(m_scanline);
+    state.Write(m_frame_ready);
+    state.Write(m_first_line);
+    state.Write(m_sprite_count);
+    state.WriteBytes(m_sprite_buffer.data(), sizeof(Sprite) * m_sprite_buffer.size());
+    state.Write(m_lcdc);
+    state.Write(m_stat);
+    state.Write(m_scy);
+    state.Write(m_scx);
+    state.Write(m_lyc);
+    state.Write(m_bgp);
+    state.Write(m_obp0);
+    state.Write(m_obp1);
+    state.Write(m_wy);
+    state.Write(m_wx);
+    state.WriteBytes(m_framebuffer.data(), m_framebuffer.size() * sizeof(u32));
+}
+
+bool PPU::LoadState(StateBuffer& state) {
+    return state.Read(m_mode) &&
+           state.Read(m_cycle_counter) &&
+           state.Read(m_scanline) &&
+           state.Read(m_frame_ready) &&
+           state.Read(m_first_line) &&
+           state.Read(m_sprite_count) &&
+           state.ReadBytes(m_sprite_buffer.data(), sizeof(Sprite) * m_sprite_buffer.size()) &&
+           state.Read(m_lcdc) &&
+           state.Read(m_stat) &&
+           state.Read(m_scy) &&
+           state.Read(m_scx) &&
+           state.Read(m_lyc) &&
+           state.Read(m_bgp) &&
+           state.Read(m_obp0) &&
+           state.Read(m_obp1) &&
+           state.Read(m_wy) &&
+           state.Read(m_wx) &&
+           state.ReadBytes(m_framebuffer.data(), m_framebuffer.size() * sizeof(u32));
 }

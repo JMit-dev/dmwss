@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 
+class StateBuffer;
+
 // Base class for Memory Bank Controllers
 class MBC {
 public:
@@ -20,6 +22,11 @@ public:
     // Save/Load external RAM
     virtual bool SaveRAM(const std::string& path) = 0;
     virtual bool LoadRAM(const std::string& path) = 0;
+
+    // Save states: base serializes RAM contents and the enable flag;
+    // subclasses append their banking registers
+    virtual void SaveState(StateBuffer& state) const;
+    virtual bool LoadState(StateBuffer& state);
 
     // Factory method to create appropriate MBC based on cartridge type
     static std::unique_ptr<MBC> Create(u8 cartridge_type, const u8* rom_data, size_t rom_size);
@@ -54,6 +61,8 @@ public:
     void WriteRAM(u16 address, u8 value) override;
     bool SaveRAM(const std::string& path) override;
     bool LoadRAM(const std::string& path) override;
+    void SaveState(StateBuffer& state) const override;
+    bool LoadState(StateBuffer& state) override;
 
 private:
     u8 m_rom_bank = 1;      // ROM bank number (1-127)
@@ -75,6 +84,8 @@ public:
     void WriteRAM(u16 address, u8 value) override;
     bool SaveRAM(const std::string& path) override;
     bool LoadRAM(const std::string& path) override;
+    void SaveState(StateBuffer& state) const override;
+    bool LoadState(StateBuffer& state) override;
 
 private:
     u8 m_rom_bank = 1;      // ROM bank number (1-127)
@@ -107,6 +118,8 @@ public:
     void WriteRAM(u16 address, u8 value) override;
     bool SaveRAM(const std::string& path) override;
     bool LoadRAM(const std::string& path) override;
+    void SaveState(StateBuffer& state) const override;
+    bool LoadState(StateBuffer& state) override;
 
 private:
     u16 m_rom_bank = 1;     // ROM bank number (0-511)

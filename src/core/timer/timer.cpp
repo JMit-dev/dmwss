@@ -1,4 +1,5 @@
 #include "timer.hpp"
+#include "../../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 
 Timer::Timer(Memory& memory, Scheduler& scheduler)
@@ -166,4 +167,18 @@ void Timer::RegisterIOHandlers() {
             }
         }
     );
+}
+
+void Timer::SaveState(StateBuffer& state) const {
+    state.Write(m_div_counter);
+    state.Write(m_tima);
+    state.Write(m_tma);
+    state.Write(m_tac);
+}
+
+bool Timer::LoadState(StateBuffer& state) {
+    return state.Read(m_div_counter) &&
+           state.Read(m_tima) &&
+           state.Read(m_tma) &&
+           state.Read(m_tac);
 }

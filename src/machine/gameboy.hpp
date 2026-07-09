@@ -22,6 +22,10 @@ public:
     // Persist battery-backed cartridge RAM (no-op without a battery cart)
     void SaveBattery();
 
+    // Save states (stored in a .state file next to the ROM)
+    bool SaveStateToFile();
+    bool LoadStateFromFile();
+
     // System control
     void Reset();
     void RunFrame();

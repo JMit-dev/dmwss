@@ -4,6 +4,8 @@
 #include "../scheduler/scheduler.hpp"
 #include <array>
 
+class StateBuffer;
+
 class PPU {
 public:
     // LCD dimensions
@@ -77,6 +79,10 @@ public:
     // Check if frame is ready
     bool IsFrameReady() const { return m_frame_ready; }
     void ClearFrameReady() { m_frame_ready = false; }
+
+    // Save states
+    void SaveState(StateBuffer& state) const;
+    bool LoadState(StateBuffer& state);
 
     // DMG OAM corruption bug: called by the CPU when an instruction
     // performs a 16-bit increment/decrement (or stack access) with a

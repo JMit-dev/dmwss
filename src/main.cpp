@@ -100,6 +100,23 @@ private slots:
         }
     }
 
+    void OnSaveState() {
+        if (m_gameboy->SaveStateToFile()) {
+            statusBar()->showMessage("State saved");
+        } else {
+            statusBar()->showMessage("Failed to save state");
+        }
+    }
+
+    void OnLoadState() {
+        if (m_gameboy->LoadStateFromFile()) {
+            m_gl_widget->UpdateFramebuffer(m_gameboy->GetFramebuffer(), 160, 144);
+            statusBar()->showMessage("State loaded");
+        } else {
+            statusBar()->showMessage("Failed to load state");
+        }
+    }
+
     void OnFrameUpdate() {
         if (!m_gameboy || !m_gameboy->IsRunning()) return;
 
@@ -139,6 +156,16 @@ private:
         QAction* resetAction = emulationMenu->addAction("&Reset");
         resetAction->setShortcut(Qt::Key_R);
         connect(resetAction, &QAction::triggered, this, &MainWindow::OnReset);
+
+        emulationMenu->addSeparator();
+
+        QAction* saveStateAction = emulationMenu->addAction("&Save State");
+        saveStateAction->setShortcut(Qt::Key_F5);
+        connect(saveStateAction, &QAction::triggered, this, &MainWindow::OnSaveState);
+
+        QAction* loadStateAction = emulationMenu->addAction("&Load State");
+        loadStateAction->setShortcut(Qt::Key_F7);
+        connect(loadStateAction, &QAction::triggered, this, &MainWindow::OnLoadState);
     }
 
     void UpdateJoypad(int key, bool released) {

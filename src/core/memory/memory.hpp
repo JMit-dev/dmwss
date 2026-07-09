@@ -6,6 +6,7 @@
 
 // Forward declarations
 class MBC;
+class StateBuffer;
 
 class Memory {
 public:
@@ -61,6 +62,10 @@ public:
     bool HasBattery() const { return m_has_battery; }
     bool SaveCartRAM(const std::string& path);
     bool LoadCartRAM(const std::string& path);
+
+    // Save states
+    void SaveState(StateBuffer& state) const;
+    bool LoadState(StateBuffer& state);
 
     // Direct memory access (for debugging/testing)
     u8* GetWRAM() { return m_wram.data(); }

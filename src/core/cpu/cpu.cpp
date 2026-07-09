@@ -1,4 +1,5 @@
 #include "cpu.hpp"
+#include "../../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 
 CPU::CPU(Memory& memory, Scheduler& scheduler)
@@ -448,4 +449,36 @@ void CPU::ExecuteInstruction(u8 opcode) {
             spdlog::error("Unknown opcode: 0x{:02X} at PC=0x{:04X}", opcode, m_regs.pc - 1);
             break;
     }
+}
+
+void CPU::SaveState(StateBuffer& state) const {
+    state.Write(m_regs.af);
+    state.Write(m_regs.bc);
+    state.Write(m_regs.de);
+    state.Write(m_regs.hl);
+    state.Write(m_regs.sp);
+    state.Write(m_regs.pc);
+    state.Write(m_ime);
+    state.Write(m_ime_scheduled);
+    state.Write(m_halted);
+    state.Write(m_halt_bug);
+    state.Write(m_stopped);
+    state.Write(m_double_speed);
+    state.Write(m_speed_armed);
+}
+
+bool CPU::LoadState(StateBuffer& state) {
+    return state.Read(m_regs.af) &&
+           state.Read(m_regs.bc) &&
+           state.Read(m_regs.de) &&
+           state.Read(m_regs.hl) &&
+           state.Read(m_regs.sp) &&
+           state.Read(m_regs.pc) &&
+           state.Read(m_ime) &&
+           state.Read(m_ime_scheduled) &&
+           state.Read(m_halted) &&
+           state.Read(m_halt_bug) &&
+           state.Read(m_stopped) &&
+           state.Read(m_double_speed) &&
+           state.Read(m_speed_armed);
 }

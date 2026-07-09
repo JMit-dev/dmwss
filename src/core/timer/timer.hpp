@@ -3,6 +3,8 @@
 #include "../memory/memory.hpp"
 #include "../scheduler/scheduler.hpp"
 
+class StateBuffer;
+
 class Timer {
 public:
     Timer(Memory& memory, Scheduler& scheduler);
@@ -10,6 +12,10 @@ public:
 
     void Reset();
     void Step(u32 cycles);
+
+    // Save states
+    void SaveState(StateBuffer& state) const;
+    bool LoadState(StateBuffer& state);
 
 private:
     Memory& m_memory;
