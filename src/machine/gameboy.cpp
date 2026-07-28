@@ -18,16 +18,18 @@ GameBoy::GameBoy()
     m_ppu = std::make_unique<PPU>(*m_memory, *m_scheduler);
     m_apu = std::make_unique<APU>(*m_memory);
     m_timer = std::make_unique<Timer>(*m_memory, *m_scheduler);
+    m_serial = std::make_unique<Serial>(*m_memory);
 
     // The CPU drives time: PPU and Timer advance on every memory access so
     // mid-instruction reads/writes observe them at the correct cycle.
     // In CGB double-speed mode the PPU and APU run at half the CPU rate,
-    // while the Timer stays on the CPU clock.
+    // while the Timer and Serial stay on the CPU clock.
     m_cpu->SetTickCallback([this](u32 cycles) {
         u32 real_cycles = m_cpu->IsDoubleSpeed() ? (cycles / 2) : cycles;
         m_ppu->Step(real_cycles);
         m_apu->Step(real_cycles);
         m_timer->Step(cycles);
+        m_serial->Step(cycles);
     });
 
     // The OAM corruption bug is DMG-only silicon behavior
@@ -153,6 +155,7 @@ void GameBoy::Reset() {
     m_ppu->Reset();
     m_apu->Reset();
     m_timer->Reset();
+    m_serial->Reset();
 
     m_running = true;
 }
@@ -280,17 +283,7 @@ void GameBoy::RegisterIOHandlers() {
         }
     );
 
-    // Serial I/O registers (0xFF01-0xFF02)
-    // Stub these out for now - most games don't use serial
-    m_memory->RegisterIOHandler(0xFF01,
-        [](u16) -> u8 { return 0xFF; },  // SB - Serial transfer data
-        [](u16, u8) {}                    // Ignore writes
-    );
-
-    m_memory->RegisterIOHandler(0xFF02,
-        [](u16) -> u8 { return 0x7E; },  // SC - Serial transfer control (bit 7=0, not transferring)
-        [](u16, u8) {}                    // Ignore writes
-    );
+    // Serial (0xFF01-0xFF02) is handled by the Serial component
 
     // DMA - OAM DMA transfer (0xFF46): writing XX copies 0xXX00-0xXX9F
     // to OAM. Real DMA takes 160 M-cycles with the bus restricted to HRAM;
@@ -327,7 +320,7 @@ void GameBoy::RegisterIOHandlers() {
 
 // Save state file layout: magic, version, then each component in order
 static constexpr u32 STATE_MAGIC = 0x53574D44;  // "DMWS"
-static constexpr u32 STATE_VERSION = 1;
+static constexpr u32 STATE_VERSION = 2;         // v2: added serial state
 
 std::string GameBoy::StateSlotPath(int slot) const {
     return std::filesystem::path(m_save_path)
@@ -355,6 +348,7 @@ bool GameBoy::SaveStateToFile(int slot) {
     m_ppu->SaveState(state);
     m_apu->SaveState(state);
     m_timer->SaveState(state);
+    m_serial->SaveState(state);
 
     std::string path = StateSlotPath(slot);
     std::ofstream file(path, std::ios::binary);
@@ -404,7 +398,8 @@ bool GameBoy::LoadStateFromFile(int slot) {
               m_memory->LoadState(state) &&
               m_ppu->LoadState(state) &&
               m_apu->LoadState(state) &&
-              m_timer->LoadState(state);
+              m_timer->LoadState(state) &&
+              m_serial->LoadState(state);
     if (!ok) {
         spdlog::error("State file is truncated or corrupt: {}", path);
         return false;

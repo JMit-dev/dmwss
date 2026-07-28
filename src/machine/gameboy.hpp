@@ -6,6 +6,7 @@
 #include "../core/ppu/ppu.hpp"
 #include "../core/apu/apu.hpp"
 #include "../core/timer/timer.hpp"
+#include "../core/serial/serial.hpp"
 #include "cheats.hpp"
 #include <string>
 #include <vector>
@@ -61,6 +62,7 @@ public:
     PPU& GetPPU() { return *m_ppu; }
     APU& GetAPU() { return *m_apu; }
     Memory& GetMemory() { return *m_memory; }
+    Serial& GetSerial() { return *m_serial; }
 
 private:
     // Components (order matters for initialization)
@@ -70,6 +72,7 @@ private:
     std::unique_ptr<PPU> m_ppu;
     std::unique_ptr<APU> m_apu;
     std::unique_ptr<Timer> m_timer;
+    std::unique_ptr<Serial> m_serial;
 
     // State
     bool m_running;
