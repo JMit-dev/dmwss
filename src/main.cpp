@@ -6,11 +6,41 @@
 #include <QMessageBox>
 #include <QKeyEvent>
 #include <QStatusBar>
+#include <QSlider>
+#include <QWidgetAction>
+#include <QActionGroup>
+#include <QImage>
+#include <QSettings>
+#include <array>
 #include <spdlog/spdlog.h>
 #include "core/types.hpp"
 #include "machine/gameboy.hpp"
 #include "ui/gl_widget.hpp"
 #include "ui/audio_output.hpp"
+#include "ui/settings_dialog.hpp"
+#include "ui/cheats_dialog.hpp"
+
+// Framebuffer byte order is R,G,B,A, so as a little-endian u32: 0xAABBGGRR
+static constexpr u32 RGBA(u8 r, u8 g, u8 b) {
+    return 0xFF000000u | (static_cast<u32>(b) << 16) | (static_cast<u32>(g) << 8) | r;
+}
+
+struct DisplayPalette {
+    const char* name;
+    std::array<u32, 4> colors;  // Lightest to darkest
+};
+
+static const DisplayPalette PALETTES[] = {
+    {"Grayscale",     {RGBA(0xFF, 0xFF, 0xFF), RGBA(0xAA, 0xAA, 0xAA),
+                       RGBA(0x55, 0x55, 0x55), RGBA(0x00, 0x00, 0x00)}},
+    {"Classic Green", {RGBA(0xE0, 0xF8, 0xD0), RGBA(0x88, 0xC0, 0x70),
+                       RGBA(0x34, 0x68, 0x56), RGBA(0x08, 0x18, 0x20)}},
+    {"Pocket",        {RGBA(0xC4, 0xCF, 0xA1), RGBA(0x8B, 0x95, 0x6D),
+                       RGBA(0x4D, 0x53, 0x3C), RGBA(0x1F, 0x1F, 0x1F)}},
+    {"Amber",         {RGBA(0xFF, 0xCC, 0x66), RGBA(0xCC, 0x92, 0x33),
+                       RGBA(0x88, 0x55, 0x11), RGBA(0x22, 0x11, 0x00)}},
+};
+static constexpr int PALETTE_COUNT = 4;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -21,7 +51,8 @@ public:
         , m_gameboy(nullptr)
         , m_gl_widget(nullptr)
         , m_frame_timer(nullptr)
-        , m_joypad_state(0xFF) {
+        , m_joypad_state(0xFF)
+        , m_current_slot(1) {
 
         setWindowTitle("DMWSS - Game Boy Emulator v0.1.0");
         resize(800, 720);
@@ -31,9 +62,6 @@ public:
         m_gl_widget->setMinimumSize(160 * 3, 144 * 3);
         setCentralWidget(m_gl_widget);
 
-        // Create menu bar
-        CreateMenus();
-
         // Create GameBoy instance
         m_gameboy = std::make_unique<GameBoy>();
 
@@ -41,7 +69,10 @@ public:
         m_audio = std::make_unique<AudioOutput>(m_gameboy->GetAPU());
         m_audio->Start();
 
-        // Create frame timer (60 FPS)
+        CreateMenus();
+        LoadSettings();
+
+        // Create frame timer (60 FPS at 1x speed)
         m_frame_timer = new QTimer(this);
         connect(m_frame_timer, &QTimer::timeout, this, &MainWindow::OnFrameUpdate);
 
@@ -49,7 +80,9 @@ public:
         spdlog::info("Application started successfully");
     }
 
-    ~MainWindow() override = default;
+    ~MainWindow() override {
+        SaveCheats();
+    }
 
 protected:
     void keyPressEvent(QKeyEvent* event) override {
@@ -73,9 +106,15 @@ private slots:
 
         if (filename.isEmpty()) return;
 
+        // Persist the previous game's cheats before they are cleared
+        SaveCheats();
+
         if (m_gameboy->LoadROM(filename.toStdString())) {
             spdlog::info("ROM loaded successfully");
-            m_frame_timer->start(16);  // ~60 FPS
+            m_current_slot = 1;
+            LoadCheats();
+            m_frame_timer->start(CurrentInterval());
+            SetPausedUI(false);
             statusBar()->showMessage("ROM loaded: " + filename);
         } else {
             QMessageBox::critical(this, "Error", "Failed to load ROM");
@@ -85,9 +124,11 @@ private slots:
     void OnPause() {
         if (m_frame_timer->isActive()) {
             m_frame_timer->stop();
+            SetPausedUI(true);
             statusBar()->showMessage("Paused");
         } else {
-            m_frame_timer->start(16);
+            m_frame_timer->start(CurrentInterval());
+            SetPausedUI(false);
             statusBar()->showMessage("Running");
         }
     }
@@ -96,25 +137,106 @@ private slots:
         if (m_gameboy->IsRunning()) {
             m_gameboy->Reset();
             spdlog::info("System reset");
-            statusBar()->showMessage("System reset");
+            statusBar()->showMessage("System reset", 2000);
         }
     }
 
-    void OnSaveState() {
-        if (m_gameboy->SaveStateToFile()) {
-            statusBar()->showMessage("State saved");
+    void OnSaveState(int slot) {
+        if (m_gameboy->SaveStateToFile(slot)) {
+            m_current_slot = slot;
+            statusBar()->showMessage(QString("State saved to slot %1").arg(slot), 2000);
         } else {
-            statusBar()->showMessage("Failed to save state");
+            statusBar()->showMessage("Failed to save state", 2000);
         }
     }
 
-    void OnLoadState() {
-        if (m_gameboy->LoadStateFromFile()) {
+    void OnLoadState(int slot) {
+        if (m_gameboy->LoadStateFromFile(slot)) {
+            m_current_slot = slot;
             m_gl_widget->UpdateFramebuffer(m_gameboy->GetFramebuffer(), 160, 144);
-            statusBar()->showMessage("State loaded");
+            statusBar()->showMessage(QString("State loaded from slot %1").arg(slot), 2000);
         } else {
-            statusBar()->showMessage("Failed to load state");
+            statusBar()->showMessage(QString("No state in slot %1").arg(slot), 2000);
         }
+    }
+
+    void OnToggleMute() {
+        bool muted = m_mute_action->isChecked();
+        m_audio->SetMuted(muted);
+        m_settings.setValue("audio/muted", muted);
+        statusBar()->showMessage(muted ? "Muted" : "Unmuted", 1500);
+    }
+
+    void OnVolumeChanged(int value) {
+        m_audio->SetVolume(value / 100.0f);
+        m_settings.setValue("audio/volume", value);
+    }
+
+    void OnSpeedChanged(int index) {
+        m_speed_index = index;
+        m_settings.setValue("emulation/speed", index);
+        if (m_frame_timer->isActive()) {
+            m_frame_timer->start(CurrentInterval());
+        }
+    }
+
+    void OnPaletteChanged(int index) {
+        m_gameboy->GetPPU().SetDisplayPalette(PALETTES[index].colors);
+        m_settings.setValue("video/palette", index);
+        // Repaint immediately when paused so the change is visible
+        m_gl_widget->UpdateFramebuffer(m_gameboy->GetFramebuffer(), 160, 144);
+    }
+
+    void OnScalingChanged(int index) {
+        m_gl_widget->SetScalingMode(static_cast<GLWidget::ScalingMode>(index));
+        m_settings.setValue("video/scaling", index);
+    }
+
+    void OnScreenshot() {
+        if (!m_gameboy->IsRunning()) {
+            statusBar()->showMessage("No ROM loaded", 2000);
+            return;
+        }
+        QString filename = QFileDialog::getSaveFileName(
+            this, "Save Screenshot", "screenshot.png", "PNG Image (*.png)");
+        if (filename.isEmpty()) return;
+
+        QImage image(reinterpret_cast<const uchar*>(m_gameboy->GetFramebuffer()),
+                     160, 144, QImage::Format_RGBA8888);
+        if (image.save(filename)) {
+            statusBar()->showMessage("Screenshot saved: " + filename, 2000);
+        } else {
+            statusBar()->showMessage("Failed to save screenshot", 2000);
+        }
+    }
+
+    void OnToggleFullscreen() {
+        if (isFullScreen()) {
+            showNormal();
+        } else {
+            showFullScreen();
+        }
+    }
+
+    void OnControls() {
+        SettingsDialog dialog(m_key_bindings, this);
+        if (dialog.exec() == QDialog::Accepted) {
+            m_key_bindings = dialog.GetBindings();
+            for (int i = 0; i < SettingsDialog::BUTTON_COUNT; i++) {
+                m_settings.setValue(QString("input/key%1").arg(i), m_key_bindings[i]);
+            }
+            statusBar()->showMessage("Controls updated", 2000);
+        }
+    }
+
+    void OnCheats() {
+        if (!m_gameboy->IsRunning()) {
+            statusBar()->showMessage("Load a ROM first", 2000);
+            return;
+        }
+        CheatsDialog dialog(*m_gameboy, this);
+        dialog.exec();
+        SaveCheats();
     }
 
     void OnFrameUpdate() {
@@ -134,12 +256,53 @@ private slots:
     }
 
 private:
+    int CurrentInterval() const {
+        // 1x = 16ms (~60 FPS); each speed step halves the interval
+        return 16 >> m_speed_index;
+    }
+
+    void SetPausedUI(bool paused) {
+        m_pause_action->setText(paused ? "&Resume" : "&Pause");
+    }
+
+    QMenu* BuildStateMenu(const QString& title, bool is_save) {
+        QMenu* menu = new QMenu(title, this);
+        for (int i = 0; i < GameBoy::STATE_SLOT_COUNT; i++) {
+            int slot = i + 1;
+            QAction* action = menu->addAction(QString("Slot &%1").arg(slot));
+            Qt::Key key = static_cast<Qt::Key>(Qt::Key_F1 + i);
+            action->setShortcut(is_save
+                ? QKeySequence(QKeyCombination(Qt::ShiftModifier, key))
+                : QKeySequence(key));
+            if (is_save) {
+                connect(action, &QAction::triggered, this, [this, slot]() { OnSaveState(slot); });
+            } else {
+                m_load_slot_actions[i] = action;
+                connect(action, &QAction::triggered, this, [this, slot]() { OnLoadState(slot); });
+            }
+        }
+        if (!is_save) {
+            // Grey out empty slots when the menu opens
+            connect(menu, &QMenu::aboutToShow, this, [this]() {
+                for (int i = 0; i < GameBoy::STATE_SLOT_COUNT; i++) {
+                    m_load_slot_actions[i]->setEnabled(m_gameboy->StateSlotExists(i + 1));
+                }
+            });
+        }
+        return menu;
+    }
+
     void CreateMenus() {
+        // File
         QMenu* fileMenu = menuBar()->addMenu("&File");
 
         QAction* openAction = fileMenu->addAction("&Open ROM...");
         openAction->setShortcut(QKeySequence::Open);
         connect(openAction, &QAction::triggered, this, &MainWindow::OnFileOpen);
+
+        QAction* screenshotAction = fileMenu->addAction("&Screenshot...");
+        screenshotAction->setShortcut(Qt::Key_F12);
+        connect(screenshotAction, &QAction::triggered, this, &MainWindow::OnScreenshot);
 
         fileMenu->addSeparator();
 
@@ -147,53 +310,186 @@ private:
         exitAction->setShortcut(QKeySequence::Quit);
         connect(exitAction, &QAction::triggered, this, &QWidget::close);
 
+        // Emulation
         QMenu* emulationMenu = menuBar()->addMenu("&Emulation");
 
-        QAction* pauseAction = emulationMenu->addAction("&Pause");
-        pauseAction->setShortcut(Qt::Key_P);
-        connect(pauseAction, &QAction::triggered, this, &MainWindow::OnPause);
+        m_pause_action = emulationMenu->addAction("&Pause");
+        m_pause_action->setShortcut(Qt::Key_P);
+        connect(m_pause_action, &QAction::triggered, this, &MainWindow::OnPause);
 
         QAction* resetAction = emulationMenu->addAction("&Reset");
         resetAction->setShortcut(Qt::Key_R);
         connect(resetAction, &QAction::triggered, this, &MainWindow::OnReset);
 
+        QMenu* speedMenu = emulationMenu->addMenu("Spee&d");
+        m_speed_group = new QActionGroup(this);
+        const char* speed_names[] = {"1x", "2x", "4x", "8x"};
+        for (int i = 0; i < 4; i++) {
+            QAction* action = speedMenu->addAction(speed_names[i]);
+            action->setCheckable(true);
+            action->setChecked(i == 0);
+            m_speed_group->addAction(action);
+            connect(action, &QAction::triggered, this, [this, i]() { OnSpeedChanged(i); });
+        }
+
         emulationMenu->addSeparator();
 
-        QAction* saveStateAction = emulationMenu->addAction("&Save State");
-        saveStateAction->setShortcut(Qt::Key_F5);
-        connect(saveStateAction, &QAction::triggered, this, &MainWindow::OnSaveState);
+        QAction* quickSaveAction = emulationMenu->addAction("&Quick Save");
+        quickSaveAction->setShortcut(Qt::Key_F5);
+        connect(quickSaveAction, &QAction::triggered, this, [this]() { OnSaveState(m_current_slot); });
 
-        QAction* loadStateAction = emulationMenu->addAction("&Load State");
-        loadStateAction->setShortcut(Qt::Key_F7);
-        connect(loadStateAction, &QAction::triggered, this, &MainWindow::OnLoadState);
+        QAction* quickLoadAction = emulationMenu->addAction("Quick &Load");
+        quickLoadAction->setShortcut(Qt::Key_F7);
+        connect(quickLoadAction, &QAction::triggered, this, [this]() { OnLoadState(m_current_slot); });
+
+        emulationMenu->addMenu(BuildStateMenu("&Save State", true));
+        emulationMenu->addMenu(BuildStateMenu("L&oad State", false));
+
+        // Audio
+        QMenu* audioMenu = menuBar()->addMenu("&Audio");
+        m_mute_action = audioMenu->addAction("&Mute");
+        m_mute_action->setCheckable(true);
+        m_mute_action->setShortcut(Qt::Key_M);
+        connect(m_mute_action, &QAction::triggered, this, &MainWindow::OnToggleMute);
+
+        audioMenu->addSeparator();
+        audioMenu->addAction("Volume")->setEnabled(false);
+
+        m_volume_slider = new QSlider(Qt::Horizontal, audioMenu);
+        m_volume_slider->setRange(0, 100);
+        m_volume_slider->setValue(100);
+        m_volume_slider->setMinimumWidth(140);
+        connect(m_volume_slider, &QSlider::valueChanged, this, &MainWindow::OnVolumeChanged);
+        QWidgetAction* volumeAction = new QWidgetAction(audioMenu);
+        volumeAction->setDefaultWidget(m_volume_slider);
+        audioMenu->addAction(volumeAction);
+
+        // Graphics
+        QMenu* graphicsMenu = menuBar()->addMenu("&Graphics");
+
+        QMenu* paletteMenu = graphicsMenu->addMenu("&Palette");
+        m_palette_group = new QActionGroup(this);
+        for (int i = 0; i < PALETTE_COUNT; i++) {
+            QAction* action = paletteMenu->addAction(PALETTES[i].name);
+            action->setCheckable(true);
+            action->setChecked(i == 0);
+            m_palette_group->addAction(action);
+            connect(action, &QAction::triggered, this, [this, i]() { OnPaletteChanged(i); });
+        }
+
+        QMenu* scalingMenu = graphicsMenu->addMenu("&Scaling");
+        m_scaling_group = new QActionGroup(this);
+        const char* scaling_names[] = {"Stretch", "Fit (Keep Aspect)", "Integer"};
+        for (int i = 0; i < 3; i++) {
+            QAction* action = scalingMenu->addAction(scaling_names[i]);
+            action->setCheckable(true);
+            action->setChecked(i == 1);  // GLWidget defaults to FIT
+            m_scaling_group->addAction(action);
+            connect(action, &QAction::triggered, this, [this, i]() { OnScalingChanged(i); });
+        }
+
+        graphicsMenu->addSeparator();
+
+        QAction* fullscreenAction = graphicsMenu->addAction("&Fullscreen");
+        fullscreenAction->setShortcut(Qt::Key_F11);
+        connect(fullscreenAction, &QAction::triggered, this, &MainWindow::OnToggleFullscreen);
+
+        // Tools
+        QMenu* toolsMenu = menuBar()->addMenu("&Tools");
+
+        QAction* controlsAction = toolsMenu->addAction("&Controls...");
+        connect(controlsAction, &QAction::triggered, this, &MainWindow::OnControls);
+
+        QAction* cheatsAction = toolsMenu->addAction("Chea&ts...");
+        connect(cheatsAction, &QAction::triggered, this, &MainWindow::OnCheats);
+    }
+
+    void LoadSettings() {
+        // Key bindings
+        for (int i = 0; i < SettingsDialog::BUTTON_COUNT; i++) {
+            m_key_bindings[i] = m_settings.value(
+                QString("input/key%1").arg(i),
+                SettingsDialog::DEFAULT_KEYS[i]).toInt();
+        }
+
+        // Audio
+        int volume = m_settings.value("audio/volume", 100).toInt();
+        m_volume_slider->setValue(volume);
+        m_audio->SetVolume(volume / 100.0f);
+        bool muted = m_settings.value("audio/muted", false).toBool();
+        m_mute_action->setChecked(muted);
+        m_audio->SetMuted(muted);
+
+        // Video
+        int palette = m_settings.value("video/palette", 0).toInt();
+        if (palette >= 0 && palette < PALETTE_COUNT) {
+            m_palette_group->actions()[palette]->setChecked(true);
+            m_gameboy->GetPPU().SetDisplayPalette(PALETTES[palette].colors);
+        }
+        int scaling = m_settings.value("video/scaling", 1).toInt();
+        if (scaling >= 0 && scaling < 3) {
+            m_scaling_group->actions()[scaling]->setChecked(true);
+            m_gl_widget->SetScalingMode(static_cast<GLWidget::ScalingMode>(scaling));
+        }
+
+        // Speed
+        int speed = m_settings.value("emulation/speed", 0).toInt();
+        if (speed >= 0 && speed < 4) {
+            m_speed_group->actions()[speed]->setChecked(true);
+            m_speed_index = speed;
+        }
+    }
+
+    // Cheats persist per game, keyed by the ROM header title
+    QString CheatSettingsKey() const {
+        QString title = QString::fromStdString(m_gameboy->GetROMTitle());
+        title.replace('/', '_');
+        return "cheats/" + (title.isEmpty() ? "unknown" : title);
+    }
+
+    void SaveCheats() {
+        if (!m_gameboy || !m_gameboy->IsRunning()) return;
+        QStringList list;
+        for (const Cheat& cheat : m_gameboy->GetCheats()) {
+            list << QString("%1|%2|%3")
+                        .arg(cheat.enabled ? "1" : "0")
+                        .arg(QString::fromStdString(cheat.name))
+                        .arg(QString::fromStdString(cheat.code));
+        }
+        if (list.isEmpty()) {
+            m_settings.remove(CheatSettingsKey());
+        } else {
+            m_settings.setValue(CheatSettingsKey(), list);
+        }
+    }
+
+    void LoadCheats() {
+        QStringList list = m_settings.value(CheatSettingsKey()).toStringList();
+        for (const QString& entry : list) {
+            QStringList parts = entry.split('|');
+            if (parts.size() != 3) continue;
+            if (m_gameboy->AddCheat(parts[1].toStdString(), parts[2].toStdString())) {
+                if (parts[0] != "1") {
+                    m_gameboy->SetCheatEnabled(m_gameboy->GetCheats().size() - 1, false);
+                }
+            }
+        }
     }
 
     void UpdateJoypad(int key, bool released) {
-        // Game Boy button mapping
-        // Bit 0: Right/A
-        // Bit 1: Left/B
-        // Bit 2: Up/Select
-        // Bit 3: Down/Start
+        // m_key_bindings index matches the joypad state bit:
+        // 0=Right 1=Left 2=Up 3=Down 4=A 5=B 6=Select 7=Start
         // (0 = pressed, 1 = released)
-
-        u8 button_mask = 0;
-
-        switch (key) {
-            case Qt::Key_Right:  button_mask = 0x01; break;  // Right
-            case Qt::Key_Left:   button_mask = 0x02; break;  // Left
-            case Qt::Key_Up:     button_mask = 0x04; break;  // Up
-            case Qt::Key_Down:   button_mask = 0x08; break;  // Down
-            case Qt::Key_Z:      button_mask = 0x10; break;  // A
-            case Qt::Key_X:      button_mask = 0x20; break;  // B
-            case Qt::Key_Space:  button_mask = 0x40; break;  // Select
-            case Qt::Key_Return: button_mask = 0x80; break;  // Start
-            default: return;
-        }
-
-        if (released) {
-            m_joypad_state |= button_mask;   // Set bit (released)
-        } else {
-            m_joypad_state &= ~button_mask;  // Clear bit (pressed)
+        for (int i = 0; i < SettingsDialog::BUTTON_COUNT; i++) {
+            if (m_key_bindings[i] == key) {
+                u8 button_mask = static_cast<u8>(1 << i);
+                if (released) {
+                    m_joypad_state |= button_mask;
+                } else {
+                    m_joypad_state &= ~button_mask;
+                }
+                return;
+            }
         }
     }
 
@@ -201,7 +497,18 @@ private:
     std::unique_ptr<AudioOutput> m_audio;
     GLWidget* m_gl_widget;
     QTimer* m_frame_timer;
+    QAction* m_pause_action = nullptr;
+    QAction* m_mute_action = nullptr;
+    QSlider* m_volume_slider = nullptr;
+    QActionGroup* m_speed_group = nullptr;
+    QActionGroup* m_palette_group = nullptr;
+    QActionGroup* m_scaling_group = nullptr;
+    std::array<QAction*, GameBoy::STATE_SLOT_COUNT> m_load_slot_actions{};
+    std::array<int, SettingsDialog::BUTTON_COUNT> m_key_bindings{};
+    QSettings m_settings{"dmwss", "dmwss"};
     u8 m_joypad_state;
+    int m_current_slot;
+    int m_speed_index = 0;
 };
 
 int main(int argc, char* argv[]) {

@@ -1,5 +1,6 @@
 #include "gameboy.hpp"
 #include "savestate.hpp"
+#include "../core/memory/mbc.hpp"
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <fstream>
@@ -96,6 +97,7 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
     // Persist the previous game's battery RAM before replacing it
     SaveBattery();
     m_save_path.clear();
+    m_cheats.clear();
 
     m_rom_data = rom_data;
 
@@ -186,6 +188,69 @@ void GameBoy::RunFrame() {
         frame_cycles += cycles;
         m_total_cycles += cycles;
     }
+
+    ApplyGameSharkCheats();
+}
+
+void GameBoy::ApplyGameSharkCheats() {
+    for (const Cheat& cheat : m_cheats) {
+        if (cheat.enabled && cheat.type == Cheat::Type::GAMESHARK) {
+            m_memory->Write(cheat.address, cheat.value);
+        }
+    }
+}
+
+bool GameBoy::AddCheat(const std::string& name, const std::string& code) {
+    Cheat cheat;
+    if (!ParseCheatCode(code, cheat)) {
+        spdlog::warn("Invalid cheat code: {}", code);
+        return false;
+    }
+    cheat.name = name;
+
+    if (cheat.type == Cheat::Type::GAME_GENIE && m_memory->GetMBC()) {
+        cheat.rom_patch = m_memory->GetMBC()->ApplyROMPatch(
+            cheat.address, cheat.value, cheat.has_compare, cheat.compare);
+    }
+
+    m_cheats.push_back(std::move(cheat));
+    spdlog::info("Cheat added: {} ({})", name, code);
+    return true;
+}
+
+void GameBoy::RemoveCheat(size_t index) {
+    if (index >= m_cheats.size()) return;
+    SetCheatEnabled(index, false);
+    m_cheats.erase(m_cheats.begin() + index);
+}
+
+void GameBoy::SetCheatEnabled(size_t index, bool enabled) {
+    if (index >= m_cheats.size()) return;
+    Cheat& cheat = m_cheats[index];
+    if (cheat.enabled == enabled) return;
+    cheat.enabled = enabled;
+
+    if (cheat.type == Cheat::Type::GAME_GENIE && m_memory->GetMBC()) {
+        if (enabled) {
+            cheat.rom_patch = m_memory->GetMBC()->ApplyROMPatch(
+                cheat.address, cheat.value, cheat.has_compare, cheat.compare);
+        } else {
+            m_memory->GetMBC()->RestoreROM(cheat.rom_patch);
+            cheat.rom_patch.clear();
+        }
+    }
+}
+
+std::string GameBoy::GetROMTitle() const {
+    std::string title;
+    if (m_rom_data.size() >= 0x144) {
+        for (int i = 0; i < 16; i++) {
+            char c = static_cast<char>(m_rom_data[0x134 + i]);
+            if (c == 0) break;
+            title += c;
+        }
+    }
+    return title;
 }
 
 void GameBoy::RegisterIOHandlers() {
@@ -264,7 +329,17 @@ void GameBoy::RegisterIOHandlers() {
 static constexpr u32 STATE_MAGIC = 0x53574D44;  // "DMWS"
 static constexpr u32 STATE_VERSION = 1;
 
-bool GameBoy::SaveStateToFile() {
+std::string GameBoy::StateSlotPath(int slot) const {
+    return std::filesystem::path(m_save_path)
+               .replace_extension(".state" + std::to_string(slot)).string();
+}
+
+bool GameBoy::StateSlotExists(int slot) const {
+    if (m_save_path.empty()) return false;
+    return std::filesystem::exists(StateSlotPath(slot));
+}
+
+bool GameBoy::SaveStateToFile(int slot) {
     if (!m_running || m_save_path.empty()) {
         spdlog::error("Cannot save state: no ROM loaded from a file");
         return false;
@@ -281,8 +356,7 @@ bool GameBoy::SaveStateToFile() {
     m_apu->SaveState(state);
     m_timer->SaveState(state);
 
-    std::string path = std::filesystem::path(m_save_path)
-                           .replace_extension(".state").string();
+    std::string path = StateSlotPath(slot);
     std::ofstream file(path, std::ios::binary);
     if (!file) {
         spdlog::error("Failed to open state file for writing: {}", path);
@@ -294,14 +368,13 @@ bool GameBoy::SaveStateToFile() {
     return file.good();
 }
 
-bool GameBoy::LoadStateFromFile() {
+bool GameBoy::LoadStateFromFile(int slot) {
     if (!m_running || m_save_path.empty()) {
         spdlog::error("Cannot load state: no ROM loaded from a file");
         return false;
     }
 
-    std::string path = std::filesystem::path(m_save_path)
-                           .replace_extension(".state").string();
+    std::string path = StateSlotPath(slot);
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         spdlog::error("No state file at {}", path);

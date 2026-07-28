@@ -6,6 +6,7 @@
 #include "../core/ppu/ppu.hpp"
 #include "../core/apu/apu.hpp"
 #include "../core/timer/timer.hpp"
+#include "cheats.hpp"
 #include <string>
 #include <vector>
 #include <memory>
@@ -22,9 +23,11 @@ public:
     // Persist battery-backed cartridge RAM (no-op without a battery cart)
     void SaveBattery();
 
-    // Save states (stored in a .state file next to the ROM)
-    bool SaveStateToFile();
-    bool LoadStateFromFile();
+    // Save states (stored as .state1-.state9 files next to the ROM)
+    static constexpr int STATE_SLOT_COUNT = 9;
+    bool SaveStateToFile(int slot = 1);
+    bool LoadStateFromFile(int slot = 1);
+    bool StateSlotExists(int slot) const;
 
     // System control
     void Reset();
@@ -38,6 +41,16 @@ public:
 
     // Input (joypad)
     void SetJoypadState(u8 state) { m_joypad_state = state; }
+
+    // Cheats: GameShark codes apply once per frame, Game Genie codes
+    // patch ROM while enabled. Cleared on ROM load.
+    bool AddCheat(const std::string& name, const std::string& code);
+    void RemoveCheat(size_t index);
+    void SetCheatEnabled(size_t index, bool enabled);
+    const std::vector<Cheat>& GetCheats() const { return m_cheats; }
+
+    // ROM header title (for per-game settings keys)
+    std::string GetROMTitle() const;
 
     // Debug
     bool IsRunning() const { return m_running; }
@@ -65,10 +78,17 @@ private:
     u8 m_joypad_select;  // P1 bits 4-5: button group selection
     std::vector<u8> m_rom_data;
     std::string m_save_path;  // Battery RAM file (.sav next to the ROM)
+    std::vector<Cheat> m_cheats;
 
     // Timing
     static constexpr u32 CYCLES_PER_FRAME = 70224;  // ~59.73 Hz
 
     // Initialize I/O handlers
     void RegisterIOHandlers();
+
+    // Path for a given save state slot, derived from m_save_path
+    std::string StateSlotPath(int slot) const;
+
+    // Apply enabled GameShark cheats (called once per frame)
+    void ApplyGameSharkCheats();
 };
