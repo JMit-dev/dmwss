@@ -15,7 +15,7 @@ else()
 endif()
 
 # Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGLWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGLWidgets Network)
 
 # Enable Qt MOC
 set(CMAKE_AUTOMOC ON)
@@ -82,6 +82,7 @@ target_link_libraries(dmwss PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::OpenGLWidgets
+    Qt6::Network
     glfw
     nlohmann_json::nlohmann_json
     ${CMAKE_DL_LIBS}  # miniaudio loads backends at runtime

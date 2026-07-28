@@ -19,6 +19,9 @@
 #include "ui/audio_output.hpp"
 #include "ui/settings_dialog.hpp"
 #include "ui/cheats_dialog.hpp"
+#include "ui/serial_link.hpp"
+#include <QInputDialog>
+#include <QLineEdit>
 
 // Framebuffer byte order is R,G,B,A, so as a little-endian u32: 0xAABBGGRR
 static constexpr u32 RGBA(u8 r, u8 g, u8 b) {
@@ -68,6 +71,11 @@ public:
         // Create audio output
         m_audio = std::make_unique<AudioOutput>(m_gameboy->GetAPU());
         m_audio->Start();
+
+        // Link cable over TCP
+        m_serial_link = new SerialLink(m_gameboy->GetSerial(), this);
+        connect(m_serial_link, &SerialLink::StatusChanged, this,
+                [this](const QString& status) { statusBar()->showMessage(status, 5000); });
 
         CreateMenus();
         LoadSettings();
@@ -239,6 +247,32 @@ private slots:
         SaveCheats();
     }
 
+    void OnLinkHost() {
+        bool ok = false;
+        int port = QInputDialog::getInt(this, "Host Link Cable",
+                                        "Listen on port:", 7683, 1024, 65535, 1, &ok);
+        if (ok) {
+            m_serial_link->Host(static_cast<u16>(port));
+        }
+    }
+
+    void OnLinkConnect() {
+        bool ok = false;
+        QString address = QInputDialog::getText(
+            this, "Connect Link Cable", "Host address (host or host:port):",
+            QLineEdit::Normal, "127.0.0.1:7683", &ok);
+        if (!ok || address.isEmpty()) return;
+
+        QString host = address;
+        u16 port = 7683;
+        int colon = address.lastIndexOf(':');
+        if (colon > 0) {
+            host = address.left(colon);
+            port = static_cast<u16>(address.mid(colon + 1).toUInt());
+        }
+        m_serial_link->ConnectTo(host, port);
+    }
+
     void OnFrameUpdate() {
         if (!m_gameboy || !m_gameboy->IsRunning()) return;
 
@@ -394,6 +428,21 @@ private:
         fullscreenAction->setShortcut(Qt::Key_F11);
         connect(fullscreenAction, &QAction::triggered, this, &MainWindow::OnToggleFullscreen);
 
+        // Link (cable over TCP)
+        QMenu* linkMenu = menuBar()->addMenu("&Link");
+
+        QAction* hostAction = linkMenu->addAction("&Host...");
+        connect(hostAction, &QAction::triggered, this, &MainWindow::OnLinkHost);
+
+        QAction* connectAction = linkMenu->addAction("&Connect...");
+        connect(connectAction, &QAction::triggered, this, &MainWindow::OnLinkConnect);
+
+        QAction* disconnectAction = linkMenu->addAction("&Disconnect");
+        connect(disconnectAction, &QAction::triggered, this, [this]() {
+            m_serial_link->Disconnect();
+            statusBar()->showMessage("Link: disconnected", 3000);
+        });
+
         // Tools
         QMenu* toolsMenu = menuBar()->addMenu("&Tools");
 
@@ -495,6 +544,7 @@ private:
 
     std::unique_ptr<GameBoy> m_gameboy;
     std::unique_ptr<AudioOutput> m_audio;
+    SerialLink* m_serial_link = nullptr;
     GLWidget* m_gl_widget;
     QTimer* m_frame_timer;
     QAction* m_pause_action = nullptr;
