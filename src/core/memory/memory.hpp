@@ -72,6 +72,7 @@ public:
     u8* GetVRAM() { return m_vram.data(); }
     u8* GetOAM() { return m_oam.data(); }
     u8* GetHRAM() { return m_hram.data(); }
+    MBC* GetMBC() { return m_mbc.get(); }
 
     // Reset memory
     void Reset();

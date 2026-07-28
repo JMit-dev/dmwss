@@ -406,6 +406,49 @@ bool MBC5::LoadRAM(const std::string& path) {
 }
 
 // ============================================================================
+// Game Genie ROM patches
+// ============================================================================
+
+std::vector<std::pair<u32, u8>> MBC::ApplyROMPatch(u16 address, u8 value,
+                                                   bool has_compare, u8 compare) {
+    std::vector<std::pair<u32, u8>> saved;
+
+    if (address < 0x4000) {
+        // Fixed bank: exactly one ROM location
+        if (address < m_rom.size() &&
+            (!has_compare || m_rom[address] == compare)) {
+            saved.emplace_back(address, m_rom[address]);
+            m_rom[address] = value;
+        }
+    } else if (address < 0x8000) {
+        // Banked region: the CPU address maps to the same offset in every
+        // bank. A compare byte tells us which banks the code is meant for;
+        // without one, patching every bank would corrupt unrelated data,
+        // so only bank 1 (the whole ROM for unbanked 32KB carts) is patched.
+        u32 bank_offset = address - 0x4000;
+        size_t max_bank = has_compare ? (m_rom.size() / 0x4000) : 2;
+        for (size_t bank = 1; bank < max_bank; bank++) {
+            u32 offset = static_cast<u32>(bank * 0x4000 + bank_offset);
+            if (offset < m_rom.size() &&
+                (!has_compare || m_rom[offset] == compare)) {
+                saved.emplace_back(offset, m_rom[offset]);
+                m_rom[offset] = value;
+            }
+        }
+    }
+
+    return saved;
+}
+
+void MBC::RestoreROM(const std::vector<std::pair<u32, u8>>& saved) {
+    for (const auto& [offset, original] : saved) {
+        if (offset < m_rom.size()) {
+            m_rom[offset] = original;
+        }
+    }
+}
+
+// ============================================================================
 // Save states
 // ============================================================================
 

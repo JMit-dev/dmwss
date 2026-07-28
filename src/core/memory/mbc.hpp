@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <utility>
 
 class StateBuffer;
 
@@ -27,6 +28,15 @@ public:
     // subclasses append their banking registers
     virtual void SaveState(StateBuffer& state) const;
     virtual bool LoadState(StateBuffer& state);
+
+    // Game Genie support: patch every ROM location that maps to the given
+    // CPU address (single location in the fixed bank; all banks for
+    // 0x4000-0x7FFF when a compare byte narrows it down, otherwise just
+    // bank 1). Returns the patched offsets with their original bytes so
+    // the patch can be undone when the cheat is disabled.
+    std::vector<std::pair<u32, u8>> ApplyROMPatch(u16 address, u8 value,
+                                                  bool has_compare, u8 compare);
+    void RestoreROM(const std::vector<std::pair<u32, u8>>& saved);
 
     // Factory method to create appropriate MBC based on cartridge type
     static std::unique_ptr<MBC> Create(u8 cartridge_type, const u8* rom_data, size_t rom_size);
