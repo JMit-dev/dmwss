@@ -7,15 +7,23 @@
 #include <spdlog/spdlog.h>
 #include <cstring>
 
-static void DataCallback(ma_device* device, void* output, const void*,
-                         ma_uint32 frame_count) {
-    APU* apu = static_cast<APU*>(device->pUserData);
+void AudioOutput::DataCallback(ma_device* device, void* output, const void*,
+                                ma_uint32 frame_count) {
+    AudioOutput* self = static_cast<AudioOutput*>(device->pUserData);
     s16* out = static_cast<s16*>(output);
 
-    size_t got = apu->ReadSamples(out, frame_count);
+    size_t got = self->m_apu.ReadSamples(out, frame_count);
     if (got < frame_count) {
         // Underrun: pad with silence
         std::memset(out + got * 2, 0, (frame_count - got) * 2 * sizeof(s16));
+    }
+
+    bool muted = self->m_muted.load(std::memory_order_relaxed);
+    float volume = muted ? 0.0f : self->m_volume.load(std::memory_order_relaxed);
+    if (volume != 1.0f) {
+        for (ma_uint32 i = 0; i < frame_count * 2; i++) {
+            out[i] = static_cast<s16>(out[i] * volume);
+        }
     }
 }
 
@@ -40,7 +48,7 @@ bool AudioOutput::Start() {
     config.playback.channels = 2;
     config.sampleRate = APU::OUTPUT_SAMPLE_RATE;
     config.dataCallback = DataCallback;
-    config.pUserData = &m_apu;
+    config.pUserData = this;
 
     if (ma_device_init(nullptr, &config, m_device) != MA_SUCCESS) {
         spdlog::error("Failed to initialize audio device");
