@@ -1,6 +1,7 @@
 #include "gl_widget.hpp"
 #include <spdlog/spdlog.h>
 #include <QFile>
+#include <algorithm>
 
 GLWidget::GLWidget(QWidget* parent)
     : QOpenGLWidget(parent)
@@ -45,6 +46,25 @@ void GLWidget::paintGL() {
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (!m_shader_program || !m_texture) return;
+
+    // Position the image within the widget per the scaling mode
+    const qreal dpr = devicePixelRatioF();
+    const int w = static_cast<int>(width() * dpr);
+    const int h = static_cast<int>(height() * dpr);
+    int view_w = w;
+    int view_h = h;
+    if (m_scaling_mode == ScalingMode::FIT) {
+        double scale = std::min(static_cast<double>(w) / m_texture_width,
+                                static_cast<double>(h) / m_texture_height);
+        view_w = static_cast<int>(m_texture_width * scale);
+        view_h = static_cast<int>(m_texture_height * scale);
+    } else if (m_scaling_mode == ScalingMode::INTEGER) {
+        int scale = std::min(w / m_texture_width, h / m_texture_height);
+        if (scale < 1) scale = 1;
+        view_w = m_texture_width * scale;
+        view_h = m_texture_height * scale;
+    }
+    glViewport((w - view_w) / 2, (h - view_h) / 2, view_w, view_h);
 
     m_shader_program->bind();
     m_texture->bind();

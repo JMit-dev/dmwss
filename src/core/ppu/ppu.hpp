@@ -84,6 +84,10 @@ public:
     void SaveState(StateBuffer& state) const;
     bool LoadState(StateBuffer& state);
 
+    // Display palette: the four RGBA colors DMG shades 0-3 map to
+    // (0 = lightest, 3 = darkest). Cosmetic only, not serialized.
+    void SetDisplayPalette(const std::array<u32, 4>& colors) { m_display_palette = colors; }
+
     // DMG OAM corruption bug: called by the CPU when an instruction
     // performs a 16-bit increment/decrement (or stack access) with a
     // value in the 0xFE00-0xFEFF range. Corrupts OAM if the PPU is in
@@ -103,6 +107,11 @@ private:
 
     // Framebuffer (160x144 pixels, RGBA format)
     std::array<u32, SCREEN_WIDTH * SCREEN_HEIGHT> m_framebuffer;
+
+    // RGBA colors for DMG shades 0-3 (byte order R,G,B,A => 0xAABBGGRR)
+    std::array<u32, 4> m_display_palette = {
+        0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000
+    };
 
     // Sprite buffer for current scanline
     std::array<Sprite, 10> m_sprite_buffer;  // Max 10 sprites per line

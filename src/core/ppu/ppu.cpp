@@ -486,17 +486,8 @@ u8 PPU::GetTilePixel(u16 tile_data_addr, u8 x, u8 y) {
 u32 PPU::GetColor(u8 palette, u8 color_id) {
     // Extract 2-bit color from palette
     u8 color = (palette >> (color_id * 2)) & 0x03;
-    
-    // Map to grayscale (DMG palette)
-    // 0 = White, 1 = Light gray, 2 = Dark gray, 3 = Black
-    static const u32 colors[4] = {
-        0xFFFFFFFF,  // White
-        0xFFAAAAAA,  // Light gray
-        0xFF555555,  // Dark gray
-        0xFF000000   // Black
-    };
-    
-    return colors[color];
+
+    return m_display_palette[color];
 }
 
 void PPU::RegisterIOHandlers() {
