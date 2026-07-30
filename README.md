@@ -1,13 +1,15 @@
 # dmwss
 
-**D**ot **M**atrix **W**ith **S**tereo **S**ound — a Game Boy and Game Boy Color emulator written in modern C++20, with a Qt6 desktop frontend and a WebAssembly browser build.
+**D**ot **M**atrix **W**ith **S**tereo **S**ound — a Game Boy and Game Boy Color emulator written in modern C++20, with a Qt6 desktop frontend, a WebAssembly browser build, and an Android port.
 
 [![Build](https://github.com/JMit-dev/dmwss/actions/workflows/build.yml/badge.svg)](https://github.com/JMit-dev/dmwss/actions/workflows/build.yml)
 [![Deploy web build](https://github.com/JMit-dev/dmwss/actions/workflows/pages.yml/badge.svg)](https://github.com/JMit-dev/dmwss/actions/workflows/pages.yml)
 
 **[▶ Play in your browser](https://jmit-dev.github.io/dmwss/)** — no install, no download.
 
-Prefer a native app? Grab a build from **[Releases](https://github.com/JMit-dev/dmwss/releases)**: an AppImage for Linux, a zip for Windows, and a zip for macOS. Each is self-contained — unzip (or `chmod +x` the AppImage) and run, no separate Qt install needed.
+Prefer a native app? Grab a build from **[Releases](https://github.com/JMit-dev/dmwss/releases)**: an AppImage for Linux, a zip for Windows, a zip for macOS, and an APK for Android. Each is self-contained — unzip (or `chmod +x` the AppImage, or install the APK) and run, no separate Qt install needed.
+
+> The Android build is the newest part of the pipeline and doesn't have the same track record as the other four yet — if a given release is missing the APK, that release's Android build failed in CI (it's allowed to, without blocking the rest) and the next release should have it.
 
 | | | |
 |---|---|---|
@@ -38,9 +40,14 @@ Prefer a native app? Grab a build from **[Releases](https://github.com/JMit-dev/
 - 4 selectable DMG display palettes (or the GBC colorization) and 3 scaling modes
 - Link cable emulation over TCP, so two instances (on the same machine or over a network) can trade/connect
 
+**Android**
+- Multitouch on-screen D-pad and buttons, tracked as independent touch points so diagonals and holding a direction plus a face button both work correctly
+- ROMs picked through Android's file picker are copied into app-private storage on load, so save files, save states, and cheats all work the same as on desktop
+- Landscape-only for now (the touch layout doesn't have a portrait variant yet)
+
 ## Controls
 
-Default keyboard bindings — rebindable on desktop via **Tools → Controls…**; fixed on the web build:
+Default keyboard bindings — rebindable on desktop via **Tools → Controls…**; fixed on the web build; on Android, use the on-screen D-pad and buttons instead:
 
 | Game Boy | Key |
 |---|---|
@@ -92,6 +99,24 @@ sh web/build.sh          # output in web/dist/
 ```
 
 `web/dist/` needs to be served over HTTP (not opened as a `file://` URL — the browser's WASM loader requires it). The live version at the top of this README is deployed automatically from `master`.
+
+### Android
+
+Requires a Qt6 install for Android (`android_arm64_v8a`) *and* a matching host Qt6 install (Qt's cross-compiled CMake tooling still needs a native `moc`/`rcc`/`uic`), plus the Android NDK. See `.github/workflows/release.yml`'s `build-android` job for the exact versions and flags this project builds against:
+
+```bash
+cmake -B build-android -S . \
+  -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a \
+  -DANDROID_PLATFORM=android-24 \
+  -DQT_HOST_PATH=/path/to/host/Qt/6.8.2/gcc_64 \
+  -DCMAKE_PREFIX_PATH=/path/to/android/Qt/6.8.2/android_arm64_v8a \
+  -DCMAKE_BUILD_TYPE=Release -DDMWSS_NATIVE=OFF
+
+cmake --build build-android --target dmwss_make_apk
+```
+
+The APK lands somewhere under `build-android/android-build/`.
 
 ### Tests
 

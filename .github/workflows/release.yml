@@ -131,8 +131,93 @@ jobs:
         name: release-web
         path: dmwss-web.zip
 
+  build-android:
+    runs-on: ubuntu-latest
+    # Android has more moving parts than the other builds (a host Qt
+    # install plus a separate Android-target Qt install, a pinned NDK
+    # version, Qt6's CMake Android integration) and is the newest,
+    # least-proven part of the pipeline. Its failure should not hold back
+    # a release of the four platforms that are already verified working.
+    continue-on-error: true
+    env:
+      QT_VERSION: '6.8.2'
+      NDK_VERSION: '27.0.12077973'
+      ANDROID_ABI: 'arm64-v8a'
+      ANDROID_QT_ARCH: 'android_arm64_v8a'
+      ANDROID_PLATFORM: 'android-24'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android NDK
+      run: sdkmanager --install "ndk;${{ env.NDK_VERSION }}"
+
+    # Qt6's CMake Android support cross-compiles the app with the
+    # Android-target Qt libs, but still needs a matching host (Linux)
+    # Qt install to run moc/rcc/uic during the build - hence two installs.
+    - name: Install host Qt6
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ env.QT_VERSION }}
+        dir: ${{ github.workspace }}/qt-host
+
+    - name: Install Qt6 for Android
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ env.QT_VERSION }}
+        target: android
+        arch: ${{ env.ANDROID_QT_ARCH }}
+        dir: ${{ github.workspace }}/qt-android
+
+    - name: Configure CMake
+      run: |
+        NDK_ROOT="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
+        HOST_QT=$(find "${{ github.workspace }}/qt-host/Qt" -maxdepth 2 -type d -name "gcc_64" | head -1)
+        ANDROID_QT=$(find "${{ github.workspace }}/qt-android/Qt" -maxdepth 2 -type d -name "${{ env.ANDROID_QT_ARCH }}" | head -1)
+
+        cmake -B build-android -S . \
+          -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
+          -DANDROID_ABI=${{ env.ANDROID_ABI }} \
+          -DANDROID_PLATFORM=${{ env.ANDROID_PLATFORM }} \
+          -DQT_HOST_PATH="$HOST_QT" \
+          -DCMAKE_PREFIX_PATH="$ANDROID_QT" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DDMWSS_NATIVE=OFF
+
+    # dmwss builds the native library; dmwss_make_apk is the Qt6 CMake
+    # Android integration's target that actually invokes androiddeployqt
+    # and Gradle to produce the APK
+    - name: Build APK
+      run: cmake --build build-android --target dmwss_make_apk
+
+    - name: Package APK
+      run: |
+        APK=$(find build-android -iname "*.apk" | head -1)
+        cp "$APK" dmwss-android-arm64.apk
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-android
+        path: dmwss-android-arm64.apk
+
   publish:
-    needs: [ build-linux, build-windows, build-macos, build-web ]
+    needs: [ build-linux, build-windows, build-macos, build-web, build-android ]
+    if: |
+      always() &&
+      needs.build-linux.result == 'success' &&
+      needs.build-windows.result == 'success' &&
+      needs.build-macos.result == 'success' &&
+      needs.build-web.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -142,6 +227,9 @@ jobs:
         pattern: release-*
         merge-multiple: true
 
+    # The android glob is intentionally tolerant of no match: that build
+    # is allowed to fail (see build-android's continue-on-error) without
+    # blocking the release of the other four platforms
     - uses: softprops/action-gh-release@v2
       with:
         files: |
@@ -149,4 +237,5 @@ jobs:
           dmwss-windows-x86_64.zip
           dmwss-macos-arm64.zip
           dmwss-web.zip
+          dmwss-android-arm64.apk
         generate_release_notes: true
