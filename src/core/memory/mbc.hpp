@@ -83,6 +83,24 @@ private:
     u32 GetRAMBankOffset() const;
 };
 
+// MBC2 - Up to 256KB ROM, built-in 512x4-bit RAM
+class MBC2 : public MBC {
+public:
+    MBC2(const u8* rom_data, size_t rom_size);
+
+    u8 Read(u16 address) const override;
+    void Write(u16 address, u8 value) override;
+    u8 ReadRAM(u16 address) const override;
+    void WriteRAM(u16 address, u8 value) override;
+    bool SaveRAM(const std::string& path) override;
+    bool LoadRAM(const std::string& path) override;
+    void SaveState(StateBuffer& state) const override;
+    bool LoadState(StateBuffer& state) override;
+
+private:
+    u8 m_rom_bank = 1;      // ROM bank number (1-15)
+};
+
 // MBC3 - Up to 2MB ROM, 32KB RAM, RTC (Real-Time Clock)
 class MBC3 : public MBC {
 public:
@@ -102,19 +120,29 @@ private:
     u8 m_ram_bank = 0;      // RAM bank or RTC register select (0-3 = RAM, 8-12 = RTC)
     bool m_has_rtc;
 
-    // RTC registers
+    // Live RTC counters, valid as of m_rtc_timestamp (unix seconds).
+    // Elapsed wall-clock time is folded in by UpdateRTC before any access.
     u8 m_rtc_seconds = 0;
     u8 m_rtc_minutes = 0;
     u8 m_rtc_hours = 0;
     u8 m_rtc_days_low = 0;
-    u8 m_rtc_days_high = 0;
+    u8 m_rtc_days_high = 0;   // Bit 0: day bit 8, bit 6: halt, bit 7: day carry
+    s64 m_rtc_timestamp = 0;
 
-    // RTC latch
+    // Latched copies: reads return these, frozen by the 0x00->0x01 latch
+    u8 m_latched_seconds = 0;
+    u8 m_latched_minutes = 0;
+    u8 m_latched_hours = 0;
+    u8 m_latched_days_low = 0;
+    u8 m_latched_days_high = 0;
     u8 m_rtc_latch_data = 0;
-    bool m_rtc_latched = false;
 
     u32 GetROMBankOffset() const;
     u32 GetRAMBankOffset() const;
+
+    // Advance the live counters by elapsed wall-clock time
+    void UpdateRTC();
+    void LatchRTC();
 };
 
 // MBC5 - Up to 8MB ROM, 128KB RAM

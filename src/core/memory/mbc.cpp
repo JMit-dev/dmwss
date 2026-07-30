@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <fstream>
 #include <cstring>
+#include <ctime>
 
 // External RAM size from cartridge header byte 0x149. Some carts
 // (including blargg's test ROMs) declare no RAM but still use it, so
@@ -31,6 +32,10 @@ std::unique_ptr<MBC> MBC::Create(u8 cartridge_type, const u8* rom_data, size_t r
         case 0x02:  // MBC1+RAM
         case 0x03:  // MBC1+RAM+BATTERY
             return std::make_unique<MBC1>(rom_data, rom_size);
+
+        case 0x05:  // MBC2
+        case 0x06:  // MBC2+BATTERY
+            return std::make_unique<MBC2>(rom_data, rom_size);
 
         case 0x0F:  // MBC3+TIMER+BATTERY
         case 0x10:  // MBC3+TIMER+RAM+BATTERY
@@ -200,6 +205,85 @@ bool MBC1::LoadRAM(const std::string& path) {
 }
 
 // ============================================================================
+// MBC2 Implementation (built-in 512x4-bit RAM)
+// ============================================================================
+
+MBC2::MBC2(const u8* rom_data, size_t rom_size) {
+    m_rom.resize(rom_size);
+    std::memcpy(m_rom.data(), rom_data, rom_size);
+
+    // The RAM is on the MBC chip itself: 512 half-byte cells
+    m_ram.resize(512, 0);
+
+    spdlog::info("MBC2 initialized with ROM size: {} bytes", rom_size);
+}
+
+u8 MBC2::Read(u16 address) const {
+    if (address <= 0x3FFF) {
+        // ROM Bank 0
+        return m_rom[address];
+    } else if (address <= 0x7FFF) {
+        u8 bank = m_rom_bank & 0x0F;
+        if (bank == 0) bank = 1;
+        u32 offset = bank * 0x4000 + (address - 0x4000);
+        if (offset < m_rom.size()) {
+            return m_rom[offset];
+        }
+    }
+    return 0xFF;
+}
+
+void MBC2::Write(u16 address, u8 value) {
+    if (address <= 0x3FFF) {
+        // Address bit 8 selects the function: clear = RAM enable,
+        // set = ROM bank select (there is only one control range)
+        if (address & 0x0100) {
+            m_rom_bank = value & 0x0F;
+            if (m_rom_bank == 0) m_rom_bank = 1;
+        } else {
+            m_ram_enabled = (value & 0x0F) == 0x0A;
+        }
+    }
+}
+
+u8 MBC2::ReadRAM(u16 address) const {
+    if (!m_ram_enabled) return 0xFF;
+
+    // Only 512 cells exist; the region echoes through 0xA000-0xBFFF.
+    // Cells are 4 bits wide - the upper nibble reads open-bus (1s).
+    return m_ram[address & 0x1FF] | 0xF0;
+}
+
+void MBC2::WriteRAM(u16 address, u8 value) {
+    if (!m_ram_enabled) return;
+    m_ram[address & 0x1FF] = value & 0x0F;
+}
+
+bool MBC2::SaveRAM(const std::string& path) {
+    std::ofstream file(path, std::ios::binary);
+    if (!file) return false;
+    file.write(reinterpret_cast<const char*>(m_ram.data()), m_ram.size());
+    return file.good();
+}
+
+bool MBC2::LoadRAM(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return false;
+    file.read(reinterpret_cast<char*>(m_ram.data()), m_ram.size());
+    return file.good();
+}
+
+void MBC2::SaveState(StateBuffer& state) const {
+    MBC::SaveState(state);
+    state.Write(m_rom_bank);
+}
+
+bool MBC2::LoadState(StateBuffer& state) {
+    return MBC::LoadState(state) &&
+           state.Read(m_rom_bank);
+}
+
+// ============================================================================
 // MBC3 Implementation (with RTC support)
 // ============================================================================
 
@@ -211,8 +295,48 @@ MBC3::MBC3(const u8* rom_data, size_t rom_size, bool has_rtc)
     // Allocate RAM per the cartridge header so .sav files match the cart
     m_ram.resize(RAMSizeFromHeader(rom_data, rom_size), 0);
 
+    m_rtc_timestamp = static_cast<s64>(std::time(nullptr));
+
     spdlog::info("MBC3 initialized with ROM size: {} bytes, RAM: {} bytes, RTC: {}",
                  rom_size, m_ram.size(), has_rtc);
+}
+
+void MBC3::UpdateRTC() {
+    s64 now = static_cast<s64>(std::time(nullptr));
+
+    // Halted: the counters freeze, but keep the timestamp current so
+    // time spent halted is not folded in when the clock resumes
+    if (m_rtc_days_high & 0x40) {
+        m_rtc_timestamp = now;
+        return;
+    }
+
+    s64 elapsed = now - m_rtc_timestamp;
+    if (elapsed <= 0) return;
+    m_rtc_timestamp = now;
+
+    s64 seconds = (m_rtc_seconds & 0x3F) + elapsed;
+    s64 minutes = (m_rtc_minutes & 0x3F) + seconds / 60;
+    s64 hours = (m_rtc_hours & 0x1F) + minutes / 60;
+    s64 days = (m_rtc_days_low | ((m_rtc_days_high & 0x01) << 8)) + hours / 24;
+
+    m_rtc_seconds = static_cast<u8>(seconds % 60);
+    m_rtc_minutes = static_cast<u8>(minutes % 60);
+    m_rtc_hours = static_cast<u8>(hours % 24);
+    m_rtc_days_low = static_cast<u8>(days & 0xFF);
+    m_rtc_days_high = (m_rtc_days_high & 0xFE) | ((days >> 8) & 0x01);
+    if (days > 511) {
+        m_rtc_days_high |= 0x80;  // Day counter carry, sticky until cleared
+    }
+}
+
+void MBC3::LatchRTC() {
+    UpdateRTC();
+    m_latched_seconds = m_rtc_seconds;
+    m_latched_minutes = m_rtc_minutes;
+    m_latched_hours = m_rtc_hours;
+    m_latched_days_low = m_rtc_days_low;
+    m_latched_days_high = m_rtc_days_high;
 }
 
 u32 MBC3::GetROMBankOffset() const {
@@ -251,10 +375,9 @@ void MBC3::Write(u16 address, u8 value) {
         // RAM Bank Number or RTC Register Select
         m_ram_bank = value;
     } else if (address <= 0x7FFF) {
-        // Latch Clock Data
-        if (m_rtc_latch_data == 0x00 && value == 0x01) {
-            m_rtc_latched = true;
-            // TODO: Latch current RTC values
+        // Latch Clock Data: a 0x00 -> 0x01 write freezes the readable copy
+        if (m_rtc_latch_data == 0x00 && value == 0x01 && m_has_rtc) {
+            LatchRTC();
         }
         m_rtc_latch_data = value;
     }
@@ -270,13 +393,13 @@ u8 MBC3::ReadRAM(u16 address) const {
             return m_ram[offset];
         }
     } else if (m_has_rtc && m_ram_bank >= 0x08 && m_ram_bank <= 0x0C) {
-        // RTC register access
+        // RTC register access: reads see the latched copy
         switch (m_ram_bank) {
-            case 0x08: return m_rtc_seconds;
-            case 0x09: return m_rtc_minutes;
-            case 0x0A: return m_rtc_hours;
-            case 0x0B: return m_rtc_days_low;
-            case 0x0C: return m_rtc_days_high;
+            case 0x08: return m_latched_seconds & 0x3F;
+            case 0x09: return m_latched_minutes & 0x3F;
+            case 0x0A: return m_latched_hours & 0x1F;
+            case 0x0B: return m_latched_days_low;
+            case 0x0C: return m_latched_days_high & 0xC1;
         }
     }
     return 0xFF;
@@ -292,13 +415,33 @@ void MBC3::WriteRAM(u16 address, u8 value) {
             m_ram[offset] = value;
         }
     } else if (m_has_rtc && m_ram_bank >= 0x08 && m_ram_bank <= 0x0C) {
-        // RTC register write
+        // RTC register write: fold in elapsed time first so setting one
+        // register doesn't discard time accrued on the others. Writes hit
+        // the live counters and the latched copy.
+        UpdateRTC();
         switch (m_ram_bank) {
-            case 0x08: m_rtc_seconds = value; break;
-            case 0x09: m_rtc_minutes = value; break;
-            case 0x0A: m_rtc_hours = value; break;
-            case 0x0B: m_rtc_days_low = value; break;
-            case 0x0C: m_rtc_days_high = value; break;
+            case 0x08:
+                m_rtc_seconds = value & 0x3F;
+                m_latched_seconds = m_rtc_seconds;
+                // Writing seconds also resets the sub-second counter
+                m_rtc_timestamp = static_cast<s64>(std::time(nullptr));
+                break;
+            case 0x09:
+                m_rtc_minutes = value & 0x3F;
+                m_latched_minutes = m_rtc_minutes;
+                break;
+            case 0x0A:
+                m_rtc_hours = value & 0x1F;
+                m_latched_hours = m_rtc_hours;
+                break;
+            case 0x0B:
+                m_rtc_days_low = value;
+                m_latched_days_low = value;
+                break;
+            case 0x0C:
+                m_rtc_days_high = value & 0xC1;
+                m_latched_days_high = m_rtc_days_high;
+                break;
         }
     }
 }
@@ -307,7 +450,30 @@ bool MBC3::SaveRAM(const std::string& path) {
     std::ofstream file(path, std::ios::binary);
     if (!file) return false;
     file.write(reinterpret_cast<const char*>(m_ram.data()), m_ram.size());
-    // TODO: Save RTC data
+
+    // RTC carts append the 48-byte footer other emulators (VBA, BGB,
+    // SameBoy) use: live regs, latched regs (u32 LE each), unix timestamp
+    if (m_has_rtc) {
+        UpdateRTC();
+        auto write_u32 = [&file](u32 value) {
+            u8 bytes[4] = {static_cast<u8>(value), static_cast<u8>(value >> 8),
+                           static_cast<u8>(value >> 16), static_cast<u8>(value >> 24)};
+            file.write(reinterpret_cast<const char*>(bytes), 4);
+        };
+        write_u32(m_rtc_seconds);
+        write_u32(m_rtc_minutes);
+        write_u32(m_rtc_hours);
+        write_u32(m_rtc_days_low);
+        write_u32(m_rtc_days_high);
+        write_u32(m_latched_seconds);
+        write_u32(m_latched_minutes);
+        write_u32(m_latched_hours);
+        write_u32(m_latched_days_low);
+        write_u32(m_latched_days_high);
+        u64 stamp = static_cast<u64>(m_rtc_timestamp);
+        write_u32(static_cast<u32>(stamp));
+        write_u32(static_cast<u32>(stamp >> 32));
+    }
     return file.good();
 }
 
@@ -315,8 +481,41 @@ bool MBC3::LoadRAM(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return false;
     file.read(reinterpret_cast<char*>(m_ram.data()), m_ram.size());
-    // TODO: Load RTC data
-    return file.good();
+    if (!file.good()) return false;
+
+    if (m_has_rtc) {
+        auto read_u32 = [&file](u32& value) {
+            u8 bytes[4];
+            file.read(reinterpret_cast<char*>(bytes), 4);
+            value = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) |
+                    (static_cast<u32>(bytes[3]) << 24);
+        };
+        u32 regs[10];
+        for (u32& reg : regs) read_u32(reg);
+        u32 stamp_low = 0;
+        u32 stamp_high = 0;
+        read_u32(stamp_low);
+        read_u32(stamp_high);
+
+        // Old .sav files without the footer keep the fresh power-on clock
+        if (file.good()) {
+            m_rtc_seconds = static_cast<u8>(regs[0]);
+            m_rtc_minutes = static_cast<u8>(regs[1]);
+            m_rtc_hours = static_cast<u8>(regs[2]);
+            m_rtc_days_low = static_cast<u8>(regs[3]);
+            m_rtc_days_high = static_cast<u8>(regs[4]);
+            m_latched_seconds = static_cast<u8>(regs[5]);
+            m_latched_minutes = static_cast<u8>(regs[6]);
+            m_latched_hours = static_cast<u8>(regs[7]);
+            m_latched_days_low = static_cast<u8>(regs[8]);
+            m_latched_days_high = static_cast<u8>(regs[9]);
+            m_rtc_timestamp = static_cast<s64>(
+                stamp_low | (static_cast<u64>(stamp_high) << 32));
+            // Fold in the wall-clock time that passed since the save
+            UpdateRTC();
+        }
+    }
+    return true;
 }
 
 // ============================================================================
@@ -485,8 +684,13 @@ void MBC3::SaveState(StateBuffer& state) const {
     state.Write(m_rtc_hours);
     state.Write(m_rtc_days_low);
     state.Write(m_rtc_days_high);
+    state.Write(m_rtc_timestamp);
+    state.Write(m_latched_seconds);
+    state.Write(m_latched_minutes);
+    state.Write(m_latched_hours);
+    state.Write(m_latched_days_low);
+    state.Write(m_latched_days_high);
     state.Write(m_rtc_latch_data);
-    state.Write(m_rtc_latched);
 }
 
 bool MBC3::LoadState(StateBuffer& state) {
@@ -498,8 +702,13 @@ bool MBC3::LoadState(StateBuffer& state) {
            state.Read(m_rtc_hours) &&
            state.Read(m_rtc_days_low) &&
            state.Read(m_rtc_days_high) &&
-           state.Read(m_rtc_latch_data) &&
-           state.Read(m_rtc_latched);
+           state.Read(m_rtc_timestamp) &&
+           state.Read(m_latched_seconds) &&
+           state.Read(m_latched_minutes) &&
+           state.Read(m_latched_hours) &&
+           state.Read(m_latched_days_low) &&
+           state.Read(m_latched_days_high) &&
+           state.Read(m_rtc_latch_data);
 }
 
 void MBC5::SaveState(StateBuffer& state) const {
