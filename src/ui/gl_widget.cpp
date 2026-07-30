@@ -1,6 +1,7 @@
 #include "gl_widget.hpp"
 #include <spdlog/spdlog.h>
 #include <QFile>
+#include <QCoreApplication>
 #include <algorithm>
 
 GLWidget::GLWidget(QWidget* parent)
@@ -140,8 +141,12 @@ void GLWidget::SetupQuad() {
 void GLWidget::SetupShaders() {
     m_shader_program = new QOpenGLShaderProgram(this);
 
+    // Shaders live next to the executable, not the working directory,
+    // so packaged builds work when launched from anywhere
+    QString shader_dir = QCoreApplication::applicationDirPath() + "/shaders/";
+
     // Load vertex shader
-    QFile vert_file("shaders/display.vert");
+    QFile vert_file(shader_dir + "display.vert");
     if (!vert_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         spdlog::error("Failed to open vertex shader file");
         return;
@@ -150,7 +155,7 @@ void GLWidget::SetupShaders() {
     vert_file.close();
 
     // Load fragment shader
-    QFile frag_file("shaders/display.frag");
+    QFile frag_file(shader_dir + "display.frag");
     if (!frag_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         spdlog::error("Failed to open fragment shader file");
         return;

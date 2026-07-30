@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=dmwss
+Comment=Game Boy / Game Boy Color emulator
+Exec=dmwss
+Icon=icon
+Categories=Game;Emulator;
+Terminal=false

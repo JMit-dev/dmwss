@@ -5,12 +5,22 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Host-CPU tuning is great for local builds but produces binaries that
+# crash on older machines; release packaging turns it off
+option(DMWSS_NATIVE "Optimize for the host CPU (disable for distributable builds)" ON)
+
 # Optimization flags
 if(MSVC)
-    add_compile_options(/W4 /O2 /Oi /Ot /GL /arch:AVX2)
+    add_compile_options(/W4 /O2 /Oi /Ot /GL)
+    if(DMWSS_NATIVE)
+        add_compile_options(/arch:AVX2)
+    endif()
     add_link_options(/LTCG)
 else()
-    add_compile_options(-Wall -Wextra -pedantic -O3 -march=native -flto)
+    add_compile_options(-Wall -Wextra -pedantic -O3 -flto)
+    if(DMWSS_NATIVE)
+        add_compile_options(-march=native)
+    endif()
     add_link_options(-flto)
 endif()
 
@@ -71,6 +81,12 @@ file(GLOB_RECURSE UI_SOURCES
 )
 
 add_executable(dmwss src/main.cpp ${UI_SOURCES})
+
+# Package as a proper .app bundle on macOS so macdeployqt can produce a
+# self-contained, double-clickable application
+if(APPLE)
+    set_target_properties(dmwss PROPERTIES MACOSX_BUNDLE TRUE)
+endif()
 
 target_include_directories(dmwss PRIVATE
     ${CMAKE_SOURCE_DIR}/modules/miniaudio
