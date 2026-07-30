@@ -1,5 +1,5 @@
 #include "timer.hpp"
-#include "../../machine/savestate.hpp"
+#include "../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 
 Timer::Timer(Memory& memory, Scheduler& scheduler)

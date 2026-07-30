@@ -1,5 +1,5 @@
 #pragma once
-#include "../core/apu/apu.hpp"
+#include "../core/apu.hpp"
 #include <atomic>
 
 struct ma_device;

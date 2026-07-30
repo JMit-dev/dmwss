@@ -1,5 +1,5 @@
 #include "cpu.hpp"
-#include "../../machine/savestate.hpp"
+#include "../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 
 CPU::CPU(Memory& memory, Scheduler& scheduler)

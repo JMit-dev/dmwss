@@ -1,5 +1,5 @@
 #include "memory.hpp"
-#include "../../machine/savestate.hpp"
+#include "../machine/savestate.hpp"
 #include "mbc.hpp"
 #include <spdlog/spdlog.h>
 #include <cstring>

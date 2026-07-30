@@ -1,7 +1,7 @@
 #include "gameboy.hpp"
 #include "savestate.hpp"
 #include "boot_palettes.hpp"
-#include "../core/memory/mbc.hpp"
+#include "../core/mbc.hpp"
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <fstream>

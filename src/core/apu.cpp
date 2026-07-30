@@ -1,5 +1,5 @@
 #include "apu.hpp"
-#include "../../machine/savestate.hpp"
+#include "../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 #include <cstring>
 

@@ -1,5 +1,5 @@
 #include "serial.hpp"
-#include "../../machine/savestate.hpp"
+#include "../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 
 Serial::Serial(Memory& memory)

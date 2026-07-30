@@ -1,6 +1,6 @@
 #pragma once
-#include "../types.hpp"
-#include "../memory/memory.hpp"
+#include "types.hpp"
+#include "memory.hpp"
 #include <array>
 #include <atomic>
 

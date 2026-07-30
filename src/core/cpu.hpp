@@ -1,7 +1,7 @@
 #pragma once
-#include "../types.hpp"
-#include "../memory/memory.hpp"
-#include "../scheduler/scheduler.hpp"
+#include "types.hpp"
+#include "memory.hpp"
+#include "scheduler.hpp"
 
 class StateBuffer;
 

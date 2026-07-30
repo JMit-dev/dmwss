@@ -1,5 +1,5 @@
 #include "ppu.hpp"
-#include "../../machine/savestate.hpp"
+#include "../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <cstring>

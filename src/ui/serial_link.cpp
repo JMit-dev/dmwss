@@ -1,5 +1,5 @@
 #include "serial_link.hpp"
-#include "../core/serial/serial.hpp"
+#include "../core/serial.hpp"
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QElapsedTimer>

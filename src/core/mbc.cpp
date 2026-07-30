@@ -1,5 +1,5 @@
 #include "mbc.hpp"
-#include "../../machine/savestate.hpp"
+#include "../machine/savestate.hpp"
 #include <spdlog/spdlog.h>
 #include <fstream>
 #include <cstring>
