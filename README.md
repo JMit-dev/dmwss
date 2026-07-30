@@ -130,4 +130,4 @@ This project contains no Nintendo code, ROMs, or boot ROM images. Cartridge ROMs
 
 ## License
 
-TBD
+GPLv3
