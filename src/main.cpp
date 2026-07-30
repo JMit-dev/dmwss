@@ -120,6 +120,12 @@ private slots:
         if (m_gameboy->LoadROM(filename.toStdString())) {
             spdlog::info("ROM loaded successfully");
             m_current_slot = 1;
+            // LoadROM defaults DMG games to GBC colorization; a manually
+            // chosen palette wins over it
+            int palette = m_settings.value("video/palette", -1).toInt();
+            if (palette >= 0 && palette < PALETTE_COUNT) {
+                m_gameboy->GetPPU().SetDisplayPalette(PALETTES[palette].colors);
+            }
             LoadCheats();
             m_frame_timer->start(CurrentInterval());
             SetPausedUI(false);
@@ -189,7 +195,13 @@ private slots:
     }
 
     void OnPaletteChanged(int index) {
-        m_gameboy->GetPPU().SetDisplayPalette(PALETTES[index].colors);
+        // Index -1 is "Game Boy Color": the colorization a real GBC's
+        // boot ROM would assign this game
+        if (index < 0) {
+            m_gameboy->ApplyBootColorization();
+        } else {
+            m_gameboy->GetPPU().SetDisplayPalette(PALETTES[index].colors);
+        }
         m_settings.setValue("video/palette", index);
         // Repaint immediately when paused so the change is visible
         m_gl_widget->UpdateFramebuffer(m_gameboy->GetFramebuffer(), 160, 144);
@@ -403,10 +415,18 @@ private:
 
         QMenu* paletteMenu = graphicsMenu->addMenu("&Palette");
         m_palette_group = new QActionGroup(this);
+
+        // First entry: the colorization a real GBC assigns DMG games
+        QAction* gbcAction = paletteMenu->addAction("Game Boy Color");
+        gbcAction->setCheckable(true);
+        gbcAction->setChecked(true);
+        m_palette_group->addAction(gbcAction);
+        connect(gbcAction, &QAction::triggered, this, [this]() { OnPaletteChanged(-1); });
+        paletteMenu->addSeparator();
+
         for (int i = 0; i < PALETTE_COUNT; i++) {
             QAction* action = paletteMenu->addAction(PALETTES[i].name);
             action->setCheckable(true);
-            action->setChecked(i == 0);
             m_palette_group->addAction(action);
             connect(action, &QAction::triggered, this, [this, i]() { OnPaletteChanged(i); });
         }
@@ -469,11 +489,14 @@ private:
         m_mute_action->setChecked(muted);
         m_audio->SetMuted(muted);
 
-        // Video
-        int palette = m_settings.value("video/palette", 0).toInt();
+        // Video: palette -1 is GBC colorization (menu entry 0, and the
+        // default LoadROM applies on its own), 0..N-1 are manual palettes
+        int palette = m_settings.value("video/palette", -1).toInt();
         if (palette >= 0 && palette < PALETTE_COUNT) {
-            m_palette_group->actions()[palette]->setChecked(true);
+            m_palette_group->actions()[palette + 1]->setChecked(true);
             m_gameboy->GetPPU().SetDisplayPalette(PALETTES[palette].colors);
+        } else {
+            m_palette_group->actions()[0]->setChecked(true);
         }
         int scaling = m_settings.value("video/scaling", 1).toInt();
         if (scaling >= 0 && scaling < 3) {

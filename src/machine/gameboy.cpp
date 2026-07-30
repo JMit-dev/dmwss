@@ -1,5 +1,6 @@
 #include "gameboy.hpp"
 #include "savestate.hpp"
+#include "boot_palettes.hpp"
 #include "../core/memory/mbc.hpp"
 #include <spdlog/spdlog.h>
 #include <filesystem>
@@ -150,6 +151,10 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
     Reset();
     m_running = true;
 
+    // DMG games default to the colorization a real GBC would give them;
+    // the frontend may override this with a user-chosen palette
+    ApplyBootColorization();
+
     return true;
 }
 
@@ -257,6 +262,12 @@ void GameBoy::SetCheatEnabled(size_t index, bool enabled) {
             cheat.rom_patch.clear();
         }
     }
+}
+
+void GameBoy::ApplyBootColorization() {
+    if (m_rom_data.size() < 0x150 || m_cpu->IsCGBMode()) return;
+    BootColorization palettes = ComputeBootColorization(m_rom_data);
+    m_ppu->SetDisplayPalettes(palettes.bg, palettes.obj0, palettes.obj1);
 }
 
 std::string GameBoy::GetROMTitle() const {
@@ -409,7 +420,7 @@ void GameBoy::HDMATransferBlock() {
 
 // Save state file layout: magic, version, then each component in order
 static constexpr u32 STATE_MAGIC = 0x53574D44;  // "DMWS"
-static constexpr u32 STATE_VERSION = 3;         // v3: added CGB state
+static constexpr u32 STATE_VERSION = 4;         // v4: RTC, window line, OPRI
 
 std::string GameBoy::StateSlotPath(int slot) const {
     return std::filesystem::path(m_save_path)

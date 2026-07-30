@@ -1,0 +1,196 @@
+#include "boot_palettes.hpp"
+
+// Title checksums the boot ROM recognizes. The first 65 map directly to
+// a palette index; the last 14 are ambiguous and are further discriminated
+// by the fourth title character.
+static constexpr u8 TITLE_CHECKSUMS[79] = {
+    0x00, 0x88, 0x16, 0x36, 0xD1, 0xDB, 0xF2, 0x3C,
+    0x8C, 0x92, 0x3D, 0x5C, 0x58, 0xC9, 0x3E, 0x70,
+    0x1D, 0x59, 0x69, 0x19, 0x35, 0xA8, 0x14, 0xAA,
+    0x75, 0x95, 0x99, 0x34, 0x6F, 0x15, 0xFF, 0x97,
+    0x4B, 0x90, 0x17, 0x10, 0x39, 0xF7, 0xF6, 0xA2,
+    0x49, 0x4E, 0x43, 0x68, 0xE0, 0x8B, 0xF0, 0xCE,
+    0x0C, 0x29, 0xE8, 0xB7, 0x86, 0x9A, 0x52, 0x01,
+    0x9D, 0x71, 0x9C, 0xBD, 0x5D, 0x6D, 0x67, 0x3F,
+    0x6B,
+    // Ambiguous checksums
+    0xB3, 0x46, 0x28, 0xA5, 0xC6, 0xD3, 0x27, 0x61,
+    0x18, 0x66, 0x6A, 0xBF, 0x0D, 0xF4
+};
+static constexpr int AMBIGUOUS_BASE = 65;
+static constexpr int PALETTE_INDEX_COUNT = 94;
+
+// Fourth-title-letter rows for the ambiguous checksums: the column is the
+// ambiguous checksum's position, each non-matching row adds 14 to the index
+static constexpr char FOURTH_LETTERS[29 + 1] =
+    "BEFAARBEKEK R-"
+    "URAR INAILICE "
+    "R";
+
+// Per palette index: (shuffle flags << 5) | row into PALETTE_OFFSETS
+#define IDX(flags, row) static_cast<u8>(((flags) << 5) | (row))
+static constexpr u8 PAL_IDS_AND_FLAGS[PALETTE_INDEX_COUNT] = {
+    IDX(3, 28), IDX(0, 8),  IDX(0, 18), IDX(5, 3),  IDX(5, 2),  IDX(0, 7),  IDX(4, 7),  IDX(2, 11),
+    IDX(1, 0),  IDX(0, 18), IDX(3, 5),  IDX(5, 8),  IDX(0, 22), IDX(5, 9),  IDX(4, 6),  IDX(5, 17),
+    IDX(3, 8),  IDX(5, 0),  IDX(4, 7),  IDX(3, 6),  IDX(0, 18), IDX(5, 1),  IDX(1, 16), IDX(1, 28),
+    IDX(0, 18), IDX(4, 5),  IDX(0, 18), IDX(3, 4),  IDX(0, 27), IDX(0, 7),  IDX(0, 6),  IDX(3, 15),
+    IDX(3, 14), IDX(3, 14), IDX(5, 14), IDX(5, 15), IDX(3, 15), IDX(5, 18), IDX(5, 15), IDX(5, 18),
+    IDX(5, 8),  IDX(5, 11), IDX(3, 15), IDX(5, 15), IDX(4, 6),  IDX(5, 14), IDX(5, 2),  IDX(5, 2),
+    IDX(0, 18), IDX(5, 15), IDX(0, 19), IDX(0, 18), IDX(5, 1),  IDX(3, 14), IDX(5, 15), IDX(5, 15),
+    IDX(5, 13), IDX(0, 6),  IDX(2, 12), IDX(3, 14), IDX(5, 15), IDX(5, 15), IDX(0, 18), IDX(3, 28),
+    IDX(5, 12),
+    // Ambiguous rows (14 + 14 + 1), matching FOURTH_LETTERS layout
+    IDX(5, 8),  IDX(3, 10), IDX(3, 14), IDX(0, 19), IDX(5, 0),  IDX(1, 13), IDX(5, 8),  IDX(1, 11),
+    IDX(5, 12), IDX(3, 4),  IDX(5, 12), IDX(3, 13), IDX(4, 7),  IDX(5, 28),
+    IDX(3, 0),  IDX(5, 20), IDX(0, 19), IDX(3, 18), IDX(3, 28), IDX(5, 21), IDX(5, 14), IDX(5, 14),
+    IDX(3, 28), IDX(3, 28), IDX(3, 5),  IDX(5, 2),  IDX(3, 12), IDX(3, 4),
+    IDX(4, 5)
+};
+#undef IDX
+
+// Byte offsets into PALETTE_COLORS per triplet, in boot ROM order:
+// entry 2 is always BGP; entries 0/1 are OBJ candidates picked by the
+// shuffle flags. Some offsets deliberately straddle palette boundaries.
+static constexpr u16 PALETTE_OFFSETS[29][3] = {
+    {16 * 8, 22 * 8, 8 * 8},
+    {17 * 8, 4 * 8, 13 * 8},
+    {27 * 8 + 6, 0 * 8, 14 * 8},
+    {27 * 8 + 6, 4 * 8, 15 * 8},
+    {4 * 8, 4 * 8, 7 * 8},
+    {4 * 8, 22 * 8, 18 * 8},
+    {4 * 8, 22 * 8, 20 * 8},
+    {28 * 8, 22 * 8, 24 * 8},
+    {19 * 8, 22 * 8 + 6, 9 * 8},
+    {16 * 8, 28 * 8, 10 * 8},
+    {3 * 8 + 6, 3 * 8 + 6, 11 * 8},
+    {4 * 8, 23 * 8, 28 * 8},
+    {17 * 8, 22 * 8, 2 * 8},
+    {4 * 8, 0 * 8, 2 * 8},
+    {4 * 8, 28 * 8, 3 * 8},
+    {28 * 8, 3 * 8, 0 * 8},
+    {3 * 8, 28 * 8, 4 * 8},
+    {21 * 8, 28 * 8, 4 * 8},
+    {3 * 8, 28 * 8, 0 * 8},
+    {4 * 8, 3 * 8, 27 * 8},
+    {25 * 8, 3 * 8, 28 * 8},
+    {0 * 8, 28 * 8, 8 * 8},
+    {5 * 8, 5 * 8, 5 * 8},
+    {3 * 8, 28 * 8, 12 * 8},
+    {4 * 8, 3 * 8, 28 * 8},
+    {0 * 8, 0 * 8, 1 * 8},
+    {28 * 8, 3 * 8, 6 * 8},
+    {26 * 8, 26 * 8, 26 * 8},
+    {4 * 8, 28 * 8, 29 * 8}
+};
+
+// 30 palettes x 4 colors as RGB555 words
+#define C(r, g, b) static_cast<u16>((r) | ((g) << 5) | ((b) << 10))
+static constexpr u16 PALETTE_COLORS[30 * 4] = {
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x15, 0x0C), C(0x10, 0x06, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1C, 0x18), C(0x19, 0x13, 0x10), C(0x10, 0x0D, 0x05), C(0x0B, 0x06, 0x01),
+    C(0x1F, 0x1F, 0x1F), C(0x11, 0x11, 0x1B), C(0x0A, 0x0A, 0x11), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x0F, 0x1F, 0x06), C(0x00, 0x10, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x10, 0x10), C(0x12, 0x07, 0x07), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x14, 0x14, 0x14), C(0x0A, 0x0A, 0x0A), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x1F, 0x00), C(0x0F, 0x09, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x0F, 0x1F, 0x00), C(0x16, 0x0E, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x15, 0x15, 0x10), C(0x08, 0x0E, 0x0F), C(0x00, 0x00, 0x00),
+    C(0x14, 0x13, 0x1F), C(0x1F, 0x1F, 0x00), C(0x00, 0x0C, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x19), C(0x0C, 0x1D, 0x1D), C(0x13, 0x10, 0x06), C(0x0B, 0x0B, 0x0B),
+    C(0x16, 0x16, 0x1F), C(0x1F, 0x1F, 0x12), C(0x15, 0x0B, 0x08), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x14), C(0x1F, 0x12, 0x12), C(0x12, 0x12, 0x1F), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x13), C(0x12, 0x16, 0x1F), C(0x0C, 0x12, 0x0E), C(0x00, 0x07, 0x07),
+    C(0x0D, 0x1F, 0x00), C(0x1F, 0x1F, 0x1F), C(0x1F, 0x0A, 0x09), C(0x00, 0x00, 0x00),
+    C(0x0A, 0x1B, 0x00), C(0x1F, 0x10, 0x00), C(0x1F, 0x1F, 0x00), C(0x1F, 0x1F, 0x1F),
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x0E, 0x00), C(0x12, 0x08, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x18, 0x08), C(0x1F, 0x1A, 0x00), C(0x12, 0x07, 0x00), C(0x09, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x0A, 0x1F, 0x00), C(0x1F, 0x08, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x0C, 0x0A), C(0x1A, 0x00, 0x00), C(0x0C, 0x00, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x13, 0x00), C(0x1F, 0x00, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x00, 0x1F, 0x00), C(0x06, 0x10, 0x00), C(0x00, 0x09, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x0B, 0x17, 0x1F), C(0x1F, 0x00, 0x00), C(0x00, 0x00, 0x1F),
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x1F, 0x0F), C(0x00, 0x10, 0x1F), C(0x1F, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x1F, 0x00), C(0x1F, 0x00, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x00), C(0x1F, 0x00, 0x00), C(0x0C, 0x00, 0x00), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x1F, 0x19, 0x00), C(0x13, 0x0C, 0x00), C(0x00, 0x00, 0x00),
+    C(0x00, 0x00, 0x00), C(0x00, 0x10, 0x10), C(0x1F, 0x1B, 0x00), C(0x1F, 0x1F, 0x1F),
+    C(0x1F, 0x1F, 0x1F), C(0x0C, 0x14, 0x1F), C(0x00, 0x00, 0x1F), C(0x00, 0x00, 0x00),
+    C(0x1F, 0x1F, 0x1F), C(0x0F, 0x1F, 0x06), C(0x00, 0x0C, 0x18), C(0x00, 0x00, 0x00)
+};
+#undef C
+
+// Expand a 5-bit channel to 8 bits; framebuffer byte order is R,G,B,A
+static std::array<u32, 4> PaletteAt(u16 byte_offset) {
+    std::array<u32, 4> out;
+    for (int i = 0; i < 4; i++) {
+        u16 rgb = PALETTE_COLORS[byte_offset / 2 + i];
+        u32 r = rgb & 0x1F;
+        u32 g = (rgb >> 5) & 0x1F;
+        u32 b = (rgb >> 10) & 0x1F;
+        r = (r << 3) | (r >> 2);
+        g = (g << 3) | (g >> 2);
+        b = (b << 3) | (b >> 2);
+        out[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
+    }
+    return out;
+}
+
+BootColorization ComputeBootColorization(const std::vector<u8>& rom) {
+    int index = 0;
+
+    // Only Nintendo-published games (licensee 01) get a table lookup
+    bool nintendo = false;
+    if (rom.size() >= 0x150) {
+        u8 old_licensee = rom[0x14B];
+        if (old_licensee == 0x33) {
+            nintendo = (rom[0x144] == '0' && rom[0x145] == '1');
+        } else {
+            nintendo = (old_licensee == 0x01);
+        }
+    }
+
+    if (nintendo) {
+        u8 checksum = 0;
+        for (int i = 0; i < 16; i++) {
+            checksum += rom[0x134 + i];
+        }
+
+        for (int c = 0; c < 79; c++) {
+            if (TITLE_CHECKSUMS[c] != checksum) continue;
+            if (c < AMBIGUOUS_BASE) {
+                index = c;
+            } else {
+                // Ambiguous: walk the fourth-letter rows, adding one row
+                // stride (14) per miss; no match falls back to default
+                int pos = c - AMBIGUOUS_BASE;
+                int candidate = c;
+                while (candidate < PALETTE_INDEX_COUNT && pos < 29) {
+                    if (FOURTH_LETTERS[pos] == static_cast<char>(rom[0x137])) {
+                        index = candidate;
+                        break;
+                    }
+                    pos += 14;
+                    candidate += 14;
+                }
+            }
+            break;
+        }
+    }
+
+    u8 entry = PAL_IDS_AND_FLAGS[index];
+    const u16(&triplet)[3] = PALETTE_OFFSETS[entry & 0x1F];
+    u8 flags = entry >> 5;
+
+    // BGP is always the third offset; the flags decide whether each OBJ
+    // palette uses its own offset or falls back to another one
+    u16 bg_offset = triplet[2];
+    u16 obj0_offset = (flags & 0x01) ? triplet[0] : triplet[2];
+    u16 obj1_offset = (flags & 0x04) ? triplet[1]
+                    : ((flags & 0x02) ? triplet[0] : triplet[2]);
+
+    return BootColorization{
+        PaletteAt(bg_offset),
+        PaletteAt(obj0_offset),
+        PaletteAt(obj1_offset)
+    };
+}

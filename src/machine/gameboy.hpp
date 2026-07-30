@@ -25,6 +25,10 @@ public:
     // CGB-only carts ignore this
     void SetForceDMG(bool force) { m_force_dmg = force; }
 
+    // Apply the CGB boot ROM's colorization palettes to a DMG game
+    // (no-op for CGB-mode games, which drive their own palettes)
+    void ApplyBootColorization();
+
     // Persist battery-backed cartridge RAM (no-op without a battery cart)
     void SaveBattery();
 
