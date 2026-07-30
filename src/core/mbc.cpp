@@ -52,6 +52,9 @@ std::unique_ptr<MBC> MBC::Create(u8 cartridge_type, const u8* rom_data, size_t r
         case 0x1E:  // MBC5+RUMBLE+RAM+BATTERY
             return std::make_unique<MBC5>(rom_data, rom_size);
 
+        case 0xFF:  // HuC1+RAM+BATTERY
+            return std::make_unique<HuC1>(rom_data, rom_size);
+
         default:
             spdlog::error("Unsupported cartridge type: 0x{:02X}", cartridge_type);
             return nullptr;
@@ -516,6 +519,97 @@ bool MBC3::LoadRAM(const std::string& path) {
         }
     }
     return true;
+}
+
+// ============================================================================
+// HuC1 Implementation (MBC1-like with an infrared port)
+// ============================================================================
+
+HuC1::HuC1(const u8* rom_data, size_t rom_size) {
+    m_rom.resize(rom_size);
+    std::memcpy(m_rom.data(), rom_data, rom_size);
+
+    // Allocate RAM per the cartridge header so .sav files match the cart
+    m_ram.resize(RAMSizeFromHeader(rom_data, rom_size), 0);
+
+    // HuC1 has no RAM-enable gate; the 0x0000 range selects RAM vs IR
+    m_ram_enabled = true;
+
+    spdlog::info("HuC1 initialized with ROM size: {} bytes, RAM: {} bytes",
+                 rom_size, m_ram.size());
+}
+
+u8 HuC1::Read(u16 address) const {
+    if (address <= 0x3FFF) {
+        return m_rom[address];
+    } else if (address <= 0x7FFF) {
+        u32 offset = (m_rom_bank & 0x3F) * 0x4000 + (address - 0x4000);
+        if (offset < m_rom.size()) {
+            return m_rom[offset];
+        }
+    }
+    return 0xFF;
+}
+
+void HuC1::Write(u16 address, u8 value) {
+    if (address <= 0x1FFF) {
+        // 0x0E maps the IR register into 0xA000-0xBFFF, anything else RAM
+        m_ir_mode = (value & 0x0F) == 0x0E;
+    } else if (address <= 0x3FFF) {
+        // ROM bank, no bank-0 remapping on HuC1
+        m_rom_bank = value & 0x3F;
+    } else if (address <= 0x5FFF) {
+        m_ram_bank = value & 0x03;
+    }
+}
+
+u8 HuC1::ReadRAM(u16 address) const {
+    if (m_ir_mode) {
+        return 0xC0;  // No IR light seen
+    }
+    u32 offset = (m_ram_bank & 0x03) * 0x2000 + (address - 0xA000);
+    if (offset < m_ram.size()) {
+        return m_ram[offset];
+    }
+    return 0xFF;
+}
+
+void HuC1::WriteRAM(u16 address, u8 value) {
+    if (m_ir_mode) {
+        return;  // IR LED writes are dropped
+    }
+    u32 offset = (m_ram_bank & 0x03) * 0x2000 + (address - 0xA000);
+    if (offset < m_ram.size()) {
+        m_ram[offset] = value;
+    }
+}
+
+bool HuC1::SaveRAM(const std::string& path) {
+    std::ofstream file(path, std::ios::binary);
+    if (!file) return false;
+    file.write(reinterpret_cast<const char*>(m_ram.data()), m_ram.size());
+    return file.good();
+}
+
+bool HuC1::LoadRAM(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return false;
+    file.read(reinterpret_cast<char*>(m_ram.data()), m_ram.size());
+    return file.good();
+}
+
+void HuC1::SaveState(StateBuffer& state) const {
+    MBC::SaveState(state);
+    state.Write(m_rom_bank);
+    state.Write(m_ram_bank);
+    state.Write(m_ir_mode);
+}
+
+bool HuC1::LoadState(StateBuffer& state) {
+    return MBC::LoadState(state) &&
+           state.Read(m_rom_bank) &&
+           state.Read(m_ram_bank) &&
+           state.Read(m_ir_mode);
 }
 
 // ============================================================================

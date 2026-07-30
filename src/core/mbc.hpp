@@ -145,6 +145,26 @@ private:
     void LatchRTC();
 };
 
+// HuC1 - MBC1-like banking plus an infrared port (stubbed: no receiver)
+class HuC1 : public MBC {
+public:
+    HuC1(const u8* rom_data, size_t rom_size);
+
+    u8 Read(u16 address) const override;
+    void Write(u16 address, u8 value) override;
+    u8 ReadRAM(u16 address) const override;
+    void WriteRAM(u16 address, u8 value) override;
+    bool SaveRAM(const std::string& path) override;
+    bool LoadRAM(const std::string& path) override;
+    void SaveState(StateBuffer& state) const override;
+    bool LoadState(StateBuffer& state) override;
+
+private:
+    u8 m_rom_bank = 1;      // ROM bank number (6 bits)
+    u8 m_ram_bank = 0;      // RAM bank number (0-3)
+    bool m_ir_mode = false; // 0xA000-0xBFFF maps IR instead of RAM
+};
+
 // MBC5 - Up to 8MB ROM, 128KB RAM
 class MBC5 : public MBC {
 public:
