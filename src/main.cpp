@@ -24,6 +24,9 @@
 #include "ui/serial_link.hpp"
 #include <QInputDialog>
 #include <QLineEdit>
+#ifdef Q_OS_ANDROID
+#include "ui/touch_controls.hpp"
+#endif
 
 // Framebuffer byte order is R,G,B,A, so as a little-endian u32: 0xAABBGGRR
 static constexpr u32 RGBA(u8 r, u8 g, u8 b) {
@@ -66,6 +69,13 @@ public:
         m_gl_widget = new GLWidget(this);
         m_gl_widget->setMinimumSize(160 * 3, 144 * 3);
         setCentralWidget(m_gl_widget);
+
+#ifdef Q_OS_ANDROID
+        // Touch controls overlay the game display; there is no keyboard
+        // to bind, so unlike desktop this is not user-configurable
+        m_touch_controls = new TouchControls(this);
+        m_touch_controls->raise();
+#endif
 
         // Create GameBoy instance
         m_gameboy = std::make_unique<GameBoy>();
@@ -114,6 +124,14 @@ protected:
         UpdateJoypad(event->key(), true);
         QMainWindow::keyReleaseEvent(event);
     }
+
+#ifdef Q_OS_ANDROID
+    void resizeEvent(QResizeEvent* event) override {
+        QMainWindow::resizeEvent(event);
+        m_touch_controls->setGeometry(m_gl_widget->geometry());
+        m_touch_controls->raise();
+    }
+#endif
 
 private slots:
     void OnFileOpen() {
@@ -300,8 +318,13 @@ private slots:
     void OnFrameUpdate() {
         if (!m_gameboy || !m_gameboy->IsRunning()) return;
 
-        // Update joypad state
-        m_gameboy->SetJoypadState(m_joypad_state);
+        // Update joypad state. Bit clear = pressed, so combining keyboard
+        // and touch input is a bitwise AND (either source can press).
+        u8 effective_state = m_joypad_state;
+#ifdef Q_OS_ANDROID
+        effective_state &= m_touch_controls->State();
+#endif
+        m_gameboy->SetJoypadState(effective_state);
 
         // Run one frame
         m_gameboy->RunFrame();
@@ -581,6 +604,9 @@ private:
     std::unique_ptr<AudioOutput> m_audio;
     SerialLink* m_serial_link = nullptr;
     GLWidget* m_gl_widget;
+#ifdef Q_OS_ANDROID
+    TouchControls* m_touch_controls = nullptr;
+#endif
     QTimer* m_frame_timer;
     QAction* m_pause_action = nullptr;
     QAction* m_mute_action = nullptr;
