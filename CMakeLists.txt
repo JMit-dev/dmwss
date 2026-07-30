@@ -32,11 +32,13 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# GLFW
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-add_subdirectory(modules/glfw)
+# GLFW: desktop-only, has no Android backend
+if(NOT ANDROID)
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(modules/glfw)
+endif()
 
 # GLAD - We'll use Qt's OpenGL functions instead for now
 # Since we're using Qt OpenGLWidgets, we don't need GLAD immediately
@@ -99,17 +101,29 @@ target_link_libraries(dmwss PRIVATE
     Qt6::Widgets
     Qt6::OpenGLWidgets
     Qt6::Network
-    glfw
     nlohmann_json::nlohmann_json
     ${CMAKE_DL_LIBS}  # miniaudio loads backends at runtime
 )
 
-# Linux-specific Qt6 dependencies
-if(UNIX AND NOT APPLE)
+if(NOT ANDROID)
+    target_link_libraries(dmwss PRIVATE glfw)
+endif()
+
+# Linux-specific Qt6 dependencies (Android is also UNIX-and-not-APPLE by
+# CMake's reckoning, but has neither of these system libraries)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_libraries(dmwss PRIVATE
         pcre2-16
         icuuc
         icui18n
+    )
+endif()
+
+# Android packaging: point androiddeployqt at the manifest/icons and
+# build every ABI Qt was installed for
+if(ANDROID)
+    set_target_properties(dmwss PROPERTIES
+        QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/android
     )
 endif()
 
