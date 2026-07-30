@@ -1,93 +1,133 @@
-# DMWSS - Game Boy Emulator
+# dmwss
 
-**D**ot **M**atrix **W**ith **S**tereo **S**ound - A high-performance, modular Game Boy emulator written in modern C++20.
+**D**ot **M**atrix **W**ith **S**tereo **S**ound — a Game Boy and Game Boy Color emulator written in modern C++20, with a Qt6 desktop frontend and a WebAssembly browser build.
+
+[![Build](https://github.com/JMit-dev/dmwss/actions/workflows/build.yml/badge.svg)](https://github.com/JMit-dev/dmwss/actions/workflows/build.yml)
+[![Deploy web build](https://github.com/JMit-dev/dmwss/actions/workflows/pages.yml/badge.svg)](https://github.com/JMit-dev/dmwss/actions/workflows/pages.yml)
+
+**[▶ Play in your browser](https://jmit-dev.github.io/dmwss/)** — no install, no download.
+
+Prefer a native app? Grab a build from **[Releases](https://github.com/JMit-dev/dmwss/releases)**: an AppImage for Linux, a zip for Windows, and a zip for macOS. Each is self-contained — unzip (or `chmod +x` the AppImage) and run, no separate Qt install needed.
+
+| | | |
+|---|---|---|
+| ![Pokemon Yellow](docs/screenshots/pokemon-yellow.png) | ![Extreme Yellow](docs/screenshots/extreme-yellow.png) | ![Kirby's Pinball Land](docs/screenshots/kirbys-pinball-land.png) |
+| Pokemon Yellow (CGB) | Extreme Yellow (GBC hack) | Kirby's Pinball Land (MBC2) |
 
 ## Features
 
-- High-performance cached interpreter with block caching
-- Software fastmem for optimized memory access
-- Event-driven scheduler for cycle-accurate timing
-- Modular architecture with clean separation of concerns
-- Cross-platform support (Linux, Windows, macOS)
+**Emulation core**
+- Full LR35902 CPU: all documented opcodes and the CB-prefixed instruction set, with correct interrupt handling, the HALT bug, and CGB double-speed mode
+- PPU with mode-accurate timing, background/window/sprite rendering, and the DMG OAM corruption bug
+- APU with all four channels through a `miniaudio` backend
+- Software fastmem (page-table-backed memory access) and an event-driven scheduler for cycle-accurate timing
+- Memory Bank Controllers: **MBC0, MBC1, MBC2, MBC3 (with a real-time, wall-clock-driven RTC), MBC5, and HuC1**
+- Verified against blargg's test ROM suite: `cpu_instrs`, `instr_timing`, `mem_timing`, `mem_timing-2`, `halt_bug`, `interrupt_time`, `oam_bug`, and the full `dmg_sound` audio suite — 41/41 passing in CI
 
-## Architecture Highlights
+**Game Boy Color**
+- Banked VRAM (2 banks) and WRAM (8 banks) with correct `VBK`/`SVBK` handling
+- Color palette RAM (`BCPS`/`BCPD`/`OCPS`/`OCPD`), BG tile attributes, and per-object CGB palettes
+- HDMA/GDMA (general-purpose and HBlank-timed VRAM DMA)
+- Automatic **boot-ROM colorization** for original DMG games — the same title-checksum-based palette assignment algorithm the real CGB boot ROM uses, so classic Game Boy games get their authentic GBC color palette by default
+- Optional real boot ROM support (drop a `dmg_boot.bin`/`cgb_boot.bin` next to the executable for the authentic startup logo)
 
-- **CPU**: Cached interpreter with instruction block caching
-- **Memory**: Software fastmem with page tables (256-byte pages)
-- **PPU**: Accurate rendering with mode timing
-- **APU**: Four audio channels with miniaudio backend
-- **Scheduler**: Event-driven timing system
-- **UI**: Qt6-based GUI with OpenGL rendering
+**Quality of life**
+- 9 save state slots (quick save/load plus a full slot menu)
+- GameShark and Game Genie cheat code support, saved per-game
+- Rebindable controls (desktop build)
+- 4 selectable DMG display palettes (or the GBC colorization) and 3 scaling modes
+- Link cable emulation over TCP, so two instances (on the same machine or over a network) can trade/connect
 
-## Building
+## Controls
+
+Default keyboard bindings — rebindable on desktop via **Tools → Controls…**; fixed on the web build:
+
+| Game Boy | Key |
+|---|---|
+| D-Pad | Arrow keys |
+| A | <kbd>Z</kbd> |
+| B | <kbd>X</kbd> |
+| Select | <kbd>Space</kbd> |
+| Start | <kbd>Enter</kbd> |
+
+## Building from source
 
 ### Prerequisites
 
-#### Linux
 ```bash
+# Linux (Debian/Ubuntu)
 sudo apt-get install qt6-base-dev libgl1-mesa-dev cmake build-essential
-```
 
-#### macOS
-```bash
+# macOS
 brew install qt@6 cmake
+
+# Windows
+# Install Qt6 (https://www.qt.io/download) and Visual Studio 2022 with the C++ workload
 ```
 
-#### Windows
-- Install Qt6 from [Qt online installer](https://www.qt.io/download)
-- Install CMake and Visual Studio 2022
-
-### Build Instructions
+### Build
 
 ```bash
-# Clone with submodules
-git clone --recursive https://github.com/yourusername/dmwss.git
+git clone --recursive https://github.com/JMit-dev/dmwss.git
 cd dmwss
 
-# Configure
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-
-# Build
 cmake --build build --config Release
 
-# Run
-./build/dmwss
+./build/dmwss   # Windows: build\Release\dmwss.exe
 ```
 
-## Project Status
+By default the build is tuned for the host CPU (`-march=native`/`/arch:AVX2`). For a binary you intend to distribute to other machines, disable that:
 
-🚧 **In Active Development** - Phase 0: Project Setup Complete
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DDMWSS_NATIVE=OFF
+```
 
-See [CLAUDE.md](CLAUDE.md) for detailed development roadmap.
+### Web build
 
-## Dependencies
+Requires [Emscripten](https://emscripten.org/):
 
-- **Qt6** - GUI framework
-- **GLFW** - Window/input handling
-- **GLAD** - OpenGL loader
-- **miniaudio** - Audio backend
-- **fmt** - String formatting
-- **spdlog** - Logging
-- **nlohmann/json** - JSON configuration
+```bash
+sh web/build.sh          # output in web/dist/
+```
+
+`web/dist/` needs to be served over HTTP (not opened as a `file://` URL — the browser's WASM loader requires it). The live version at the top of this README is deployed automatically from `master`.
+
+### Tests
+
+```bash
+cmake --build build --target blargg_runner
+ctest --test-dir build --output-on-failure
+```
+
+The test suite needs blargg's test ROMs, which aren't included in this repository (see [Legal](#legal)):
+
+```bash
+git clone https://github.com/retrio/gb-test-roms.git test-roms/gb-test-roms
+```
+
+## Architecture
+
+```
+src/
+├── core/       Platform-agnostic emulation: CPU, PPU, APU, MBCs, memory, scheduler, timer, serial
+├── machine/    System integration: GameBoy class, cartridge/save-state handling, cheats
+├── ui/         Qt6 desktop frontend: main window, OpenGL display, dialogs, audio/link-cable backends
+└── main.cpp
+web/            Emscripten build: C ABI wrapper over the core + browser frontend
+shaders/        Display shaders
+```
+
+`src/core` and `src/machine` have no Qt dependency — they build standalone as `dmwss_core`, which is what both the desktop frontend and the web build link against.
+
+## Third-party libraries
+
+Qt6, [fmt](https://github.com/fmtlib/fmt), [spdlog](https://github.com/gabime/spdlog), [miniaudio](https://github.com/mackron/miniaudio), and [nlohmann/json](https://github.com/nlohmann/json), vendored as git submodules or found via the system package manager.
+
+## Legal
+
+This project contains no Nintendo code, ROMs, or boot ROM images. Cartridge ROMs, boot ROM dumps, and test ROMs are not distributed here and must be supplied by the user from their own legally obtained copies. "Game Boy" and "Game Boy Color" are trademarks of Nintendo.
 
 ## License
 
 TBD
-
-## Development
-
-This project follows a phased development approach:
-- Phase 0: Project Setup ✅
-- Phase 1: Core Types and Utilities (In Progress)
-- Phase 2: Event Scheduler
-- Phase 3: Memory System with Fastmem
-- Phase 4: CPU with Cached Interpreter
-- Phase 5: PPU Implementation
-- Phase 6: APU Implementation
-- Phase 7: Machine Integration
-- Phase 8: Platform Abstraction
-- Phase 9: Qt GUI Implementation
-- Phase 10: Shaders
-- Phase 11: Save States
-- Phase 12: Testing and Optimization
-- Phase 13: Documentation

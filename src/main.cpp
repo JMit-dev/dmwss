@@ -59,7 +59,7 @@ public:
         , m_joypad_state(0xFF)
         , m_current_slot(1) {
 
-        setWindowTitle("DMWSS - Game Boy Emulator v0.1.0");
+        setWindowTitle("DMWSS - Game Boy Emulator v1.0.0");
         resize(800, 720);
 
         // Create OpenGL widget
@@ -96,7 +96,7 @@ public:
         m_frame_timer = new QTimer(this);
         connect(m_frame_timer, &QTimer::timeout, this, &MainWindow::OnFrameUpdate);
 
-        spdlog::info("DMWSS - Game Boy Emulator v0.1.0");
+        spdlog::info("DMWSS - Game Boy Emulator v1.0.0");
         spdlog::info("Application started successfully");
     }
 
