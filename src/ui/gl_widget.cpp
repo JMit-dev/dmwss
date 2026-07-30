@@ -1,7 +1,6 @@
 #include "gl_widget.hpp"
 #include <spdlog/spdlog.h>
 #include <QFile>
-#include <QCoreApplication>
 #include <algorithm>
 
 GLWidget::GLWidget(QWidget* parent)
@@ -141,23 +140,29 @@ void GLWidget::SetupQuad() {
 void GLWidget::SetupShaders() {
     m_shader_program = new QOpenGLShaderProgram(this);
 
-    // Shaders live next to the executable, not the working directory,
-    // so packaged builds work when launched from anywhere
-    QString shader_dir = QCoreApplication::applicationDirPath() + "/shaders/";
+    // Shaders are embedded via the Qt resource system (compiled into the
+    // binary), not loaded from the filesystem - this is what makes them
+    // available at all on Android, where there is no "next to the exe"
+    // directory to read from, and it also sidesteps packaging concerns
+    // on every other platform. The GLES source is picked at runtime since
+    // the same widget class serves both desktop GL and Android/GLES.
+    bool es = context()->isOpenGLES();
+    QString vert_path = es ? ":/shaders/display_es.vert" : ":/shaders/display.vert";
+    QString frag_path = es ? ":/shaders/display_es.frag" : ":/shaders/display.frag";
 
     // Load vertex shader
-    QFile vert_file(shader_dir + "display.vert");
+    QFile vert_file(vert_path);
     if (!vert_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        spdlog::error("Failed to open vertex shader file");
+        spdlog::error("Failed to open vertex shader resource");
         return;
     }
     QString vert_source = vert_file.readAll();
     vert_file.close();
 
     // Load fragment shader
-    QFile frag_file(shader_dir + "display.frag");
+    QFile frag_file(frag_path);
     if (!frag_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        spdlog::error("Failed to open fragment shader file");
+        spdlog::error("Failed to open fragment shader resource");
         return;
     }
     QString frag_source = frag_file.readAll();

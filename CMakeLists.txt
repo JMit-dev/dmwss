@@ -80,7 +80,7 @@ file(GLOB_RECURSE UI_SOURCES
     "src/platform/*.hpp"
 )
 
-add_executable(dmwss src/main.cpp ${UI_SOURCES})
+add_executable(dmwss src/main.cpp ${UI_SOURCES} shaders/shaders.qrc)
 
 # Package as a proper .app bundle on macOS so macdeployqt can produce a
 # self-contained, double-clickable application
@@ -112,12 +112,6 @@ if(UNIX AND NOT APPLE)
         icui18n
     )
 endif()
-
-# Copy shaders to build directory
-add_custom_command(TARGET dmwss POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:dmwss>/shaders
-)
 
 # Tests - headless blargg test ROM runner
 enable_testing()

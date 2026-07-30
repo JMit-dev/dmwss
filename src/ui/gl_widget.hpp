@@ -1,13 +1,16 @@
 #pragma once
 #include <QOpenGLWidget>
-#include <QOpenGLFunctions_3_3_Core>
+#include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLBuffer>
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLTexture>
 #include "../core/types.hpp"
 
-class GLWidget : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core {
+// Uses only the GL calls common to desktop OpenGL and OpenGL ES (the
+// QOpenGLFunctions base, not a versioned Core-Profile-only wrapper) so
+// the same widget renders on Android/GLES as well as desktop
+class GLWidget : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT
 
 public:

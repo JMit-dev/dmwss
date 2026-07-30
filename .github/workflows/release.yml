@@ -43,9 +43,8 @@ jobs:
 
         mkdir -p AppDir
         ./linuxdeploy-x86_64.AppImage --appdir AppDir -e build/dmwss \
-          -d packaging/dmwss.desktop -i packaging/icon.png --plugin qt
-        cp -r shaders AppDir/usr/bin/shaders
-        ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+          -d packaging/dmwss.desktop -i packaging/icon.png --plugin qt \
+          --output appimage
 
         mv dmwss*.AppImage dmwss-linux-x86_64.AppImage
 
