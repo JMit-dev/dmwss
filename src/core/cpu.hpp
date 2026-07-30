@@ -2,6 +2,7 @@
 #include "types.hpp"
 #include "memory.hpp"
 #include "scheduler.hpp"
+#include <functional>
 
 class StateBuffer;
 
