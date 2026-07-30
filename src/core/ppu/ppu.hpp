@@ -87,9 +87,22 @@ public:
     void SaveState(StateBuffer& state) const;
     bool LoadState(StateBuffer& state);
 
-    // Display palette: the four RGBA colors DMG shades 0-3 map to
+    // Display palettes: the four RGBA colors DMG shades 0-3 map to
     // (0 = lightest, 3 = darkest). Cosmetic only, not serialized.
-    void SetDisplayPalette(const std::array<u32, 4>& colors) { m_display_palette = colors; }
+    // The single-palette form applies one palette to all three layers;
+    // the per-layer form supports GBC-boot-style colorization.
+    void SetDisplayPalette(const std::array<u32, 4>& colors) {
+        m_display_bg = colors;
+        m_display_obj0 = colors;
+        m_display_obj1 = colors;
+    }
+    void SetDisplayPalettes(const std::array<u32, 4>& bg,
+                            const std::array<u32, 4>& obj0,
+                            const std::array<u32, 4>& obj1) {
+        m_display_bg = bg;
+        m_display_obj0 = obj0;
+        m_display_obj1 = obj1;
+    }
 
     // CGB mode enables color palette RAM, tile attributes, and the
     // LCDC bit 0 master-priority interpretation
@@ -120,13 +133,22 @@ private:
     // Framebuffer (160x144 pixels, RGBA format)
     std::array<u32, SCREEN_WIDTH * SCREEN_HEIGHT> m_framebuffer;
 
-    // RGBA colors for DMG shades 0-3 (byte order R,G,B,A => 0xAABBGGRR)
-    std::array<u32, 4> m_display_palette = {
+    // RGBA colors for DMG shades 0-3 (byte order R,G,B,A => 0xAABBGGRR),
+    // per layer so BG and the two OBJ palettes can be colorized separately
+    std::array<u32, 4> m_display_bg = {
         0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000
     };
+    std::array<u32, 4> m_display_obj0 = m_display_bg;
+    std::array<u32, 4> m_display_obj1 = m_display_bg;
+
+    // Window internal line counter: the hardware tracks which window row
+    // to render in its own counter that only advances on lines where the
+    // window was actually drawn (so hiding the window pauses it)
+    u8 m_window_line = 0;
 
     // CGB state
     bool m_cgb_mode = false;
+    u8 m_opri = 0;                          // OBJ priority mode (0xFF6C, bit 0)
     u8 m_bcps = 0;                          // BG palette index (0xFF68)
     u8 m_ocps = 0;                          // OBJ palette index (0xFF6A)
     std::array<u8, 64> m_bg_pal_ram{};      // 8 palettes x 4 colors x RGB555
@@ -174,7 +196,7 @@ private:
 
     // Tile/pixel helpers
     u8 GetTilePixel(const u8* vram, u16 tile_data_addr, u8 x, u8 y);
-    u32 GetColor(u8 palette, u8 color_id);
+    u32 GetColor(u8 palette, u8 color_id, const std::array<u32, 4>& display);
     u32 GetCGBColor(const std::array<u8, 64>& pal_ram, u8 palette, u8 color_id);
 
     // Shared BG/window tile row renderer (map_y/map_x in tilemap pixels)

@@ -31,6 +31,7 @@ void PPU::Reset() {
     m_mode = Mode::OAM_SCAN;
     m_cycle_counter = 0;
     m_scanline = 0;
+    m_window_line = 0;
     m_frame_ready = false;
     m_first_line = false;
     m_sprite_count = 0;
@@ -113,6 +114,7 @@ void PPU::Step(u32 cycles) {
                 if (m_scanline >= SCANLINES_PER_FRAME) {
                     // Frame complete, restart from scanline 0
                     m_scanline = 0;
+                    m_window_line = 0;
                     m_memory.Write(0xFF44, m_scanline);
                     SetMode(Mode::OAM_SCAN);
                 }
@@ -312,7 +314,7 @@ void PPU::RenderScanline() {
         m_line_color.fill(0);
         m_line_priority.fill(false);
         for (u8 x = 0; x < SCREEN_WIDTH; x++) {
-            m_framebuffer[m_scanline * SCREEN_WIDTH + x] = m_display_palette[0];
+            m_framebuffer[m_scanline * SCREEN_WIDTH + x] = m_display_bg[0];
         }
     }
 
@@ -360,7 +362,7 @@ void PPU::RenderTileLayerPixel(u8 scanline, u8 screen_x, u16 tile_map_base,
     m_line_priority[screen_x] = priority;
 
     u32 color = m_cgb_mode ? GetCGBColor(m_bg_pal_ram, palette, color_id)
-                           : GetColor(m_bgp, color_id);
+                           : GetColor(m_bgp, color_id, m_display_bg);
     m_framebuffer[scanline * SCREEN_WIDTH + screen_x] = color;
 }
 
@@ -378,15 +380,18 @@ void PPU::RenderBackground(u8 scanline) {
 }
 
 void PPU::RenderWindow(u8 scanline) {
-    // Check if window is visible on this scanline
-    if (scanline < m_wy) {
+    // The window shows on lines at or below WY, with WX <= 166 (WX-7 is
+    // the left edge; 167+ pushes it fully off-screen)
+    if (scanline < m_wy || m_wx >= 167) {
         return;
     }
 
     u16 tile_map_base = (m_lcdc & LCDC_WIN_TILE_MAP) ? 0x1C00 : 0x1800;
     bool signed_addressing = (m_lcdc & LCDC_BG_TILE_DATA) == 0;
 
-    u8 window_y = scanline - m_wy;
+    // The row comes from the internal counter, not LY - WY, so lines
+    // where the window was hidden are not skipped over in its content
+    u8 window_y = m_window_line;
 
     for (u8 x = 0; x < SCREEN_WIDTH; x++) {
         s16 window_x = x - (m_wx - 7);
@@ -395,6 +400,8 @@ void PPU::RenderWindow(u8 scanline) {
         RenderTileLayerPixel(scanline, x, tile_map_base, signed_addressing,
                              static_cast<u8>(window_x), window_y);
     }
+
+    m_window_line++;
 }
 
 void PPU::RenderSprites(u8 scanline) {
@@ -407,9 +414,28 @@ void PPU::RenderSprites(u8 scanline) {
     // sprites always win regardless of the priority flags
     bool master_priority = !m_cgb_mode || (m_lcdc & LCDC_BG_ENABLE) != 0;
 
-    // Render sprites (in reverse order for priority)
-    for (s8 i = m_sprite_count - 1; i >= 0; i--) {
-        const Sprite& sprite = m_sprite_buffer[i];
+    // Draw order is lowest priority first so the winner lands on top.
+    // DMG (and CGB with OPRI set): lowest X wins, ties by OAM index.
+    // CGB default: OAM index alone decides.
+    std::array<u8, 10> order;
+    for (u8 i = 0; i < m_sprite_count; i++) {
+        order[i] = i;
+    }
+    bool x_priority = !m_cgb_mode || (m_opri & 0x01) != 0;
+    if (x_priority) {
+        std::sort(order.begin(), order.begin() + m_sprite_count,
+                  [this](u8 a, u8 b) {
+            if (m_sprite_buffer[a].x != m_sprite_buffer[b].x) {
+                return m_sprite_buffer[a].x > m_sprite_buffer[b].x;
+            }
+            return a > b;
+        });
+    } else {
+        std::reverse(order.begin(), order.begin() + m_sprite_count);
+    }
+
+    for (u8 n = 0; n < m_sprite_count; n++) {
+        const Sprite& sprite = m_sprite_buffer[order[n]];
 
         s16 sprite_y = sprite.y - 16;
         s16 sprite_x = sprite.x - 8;
@@ -458,7 +484,8 @@ void PPU::RenderSprites(u8 scanline) {
             // Draw sprite pixel
             u32 color = m_cgb_mode
                 ? GetCGBColor(m_obj_pal_ram, sprite.cgb_palette(), color_id)
-                : GetColor(palette, color_id);
+                : GetColor(palette, color_id,
+                           sprite.palette() ? m_display_obj1 : m_display_obj0);
             m_framebuffer[scanline * SCREEN_WIDTH + screen_x] = color;
         }
     }
@@ -479,11 +506,11 @@ u8 PPU::GetTilePixel(const u8* vram, u16 tile_data_addr, u8 x, u8 y) {
     return color_id;
 }
 
-u32 PPU::GetColor(u8 palette, u8 color_id) {
+u32 PPU::GetColor(u8 palette, u8 color_id, const std::array<u32, 4>& display) {
     // Extract 2-bit color from palette
     u8 color = (palette >> (color_id * 2)) & 0x03;
 
-    return m_display_palette[color];
+    return display[color];
 }
 
 u32 PPU::GetCGBColor(const std::array<u8, 64>& pal_ram, u8 palette, u8 color_id) {
@@ -522,6 +549,7 @@ void PPU::RegisterIOHandlers() {
                 // to 1 exactly 452 dots after the enabling write) and
                 // skips OAM scan - STAT reports mode 0 until drawing
                 m_scanline = 0;
+                m_window_line = 0;
                 m_cycle_counter = 4;
                 m_mode = Mode::OAM_SCAN;
                 m_first_line = true;
@@ -625,6 +653,13 @@ void PPU::RegisterIOHandlers() {
             }
         }
     );
+
+    // OPRI - CGB object priority mode (0xFF6C): bit 0 set selects
+    // DMG-style X-coordinate priority (the boot ROM sets it for DMG carts)
+    m_memory.RegisterIOHandler(0xFF6C,
+        [this](u16) -> u8 { return m_cgb_mode ? (0xFE | (m_opri & 0x01)) : 0xFF; },
+        [this](u16, u8 value) { if (m_cgb_mode) m_opri = value & 0x01; }
+    );
 }
 
 void PPU::SaveState(StateBuffer& state) const {
@@ -645,6 +680,8 @@ void PPU::SaveState(StateBuffer& state) const {
     state.Write(m_obp1);
     state.Write(m_wy);
     state.Write(m_wx);
+    state.Write(m_window_line);
+    state.Write(m_opri);
     state.Write(m_bcps);
     state.Write(m_ocps);
     state.WriteBytes(m_bg_pal_ram.data(), m_bg_pal_ram.size());
@@ -670,6 +707,8 @@ bool PPU::LoadState(StateBuffer& state) {
            state.Read(m_obp1) &&
            state.Read(m_wy) &&
            state.Read(m_wx) &&
+           state.Read(m_window_line) &&
+           state.Read(m_opri) &&
            state.Read(m_bcps) &&
            state.Read(m_ocps) &&
            state.ReadBytes(m_bg_pal_ram.data(), m_bg_pal_ram.size()) &&
