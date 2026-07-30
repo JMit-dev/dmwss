@@ -11,6 +11,8 @@
 #include <QActionGroup>
 #include <QImage>
 #include <QSettings>
+#include <QFile>
+#include <QCoreApplication>
 #include <array>
 #include <spdlog/spdlog.h>
 #include "core/types.hpp"
@@ -67,6 +69,16 @@ public:
 
         // Create GameBoy instance
         m_gameboy = std::make_unique<GameBoy>();
+
+        // Optional boot ROMs next to the executable: with these present,
+        // games start with the authentic logo scroll
+        for (const char* name : {"dmg_boot.bin", "cgb_boot.bin"}) {
+            QFile boot(QCoreApplication::applicationDirPath() + "/" + name);
+            if (boot.open(QIODevice::ReadOnly)) {
+                QByteArray data = boot.readAll();
+                m_gameboy->SetBootROM(std::vector<u8>(data.begin(), data.end()));
+            }
+        }
 
         // Create audio output
         m_audio = std::make_unique<AudioOutput>(m_gameboy->GetAPU());

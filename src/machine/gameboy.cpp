@@ -148,6 +148,9 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
         return false;
     }
 
+    // Install the boot ROM matching the boot mode (empty = boot directly)
+    m_memory->SetBootROM(cgb ? m_cgb_boot : m_dmg_boot);
+
     Reset();
     m_running = true;
 
@@ -176,6 +179,13 @@ void GameBoy::Reset() {
     m_apu->Reset();
     m_timer->Reset();
     m_serial->Reset();
+
+    // With a boot ROM mapped, execution starts at 0x0000 with the LCD
+    // off; the boot code brings the hardware up itself
+    if (m_memory->IsBootROMActive()) {
+        m_cpu->StartFromBootROM();
+        m_memory->Write(0xFF40, 0x00);
+    }
 
     m_running = true;
 }
@@ -264,6 +274,18 @@ void GameBoy::SetCheatEnabled(size_t index, bool enabled) {
     }
 }
 
+void GameBoy::SetBootROM(const std::vector<u8>& data) {
+    if (data.size() == 0x100) {
+        m_dmg_boot = data;
+        spdlog::info("DMG boot ROM installed");
+    } else if (data.size() == 0x900) {
+        m_cgb_boot = data;
+        spdlog::info("CGB boot ROM installed");
+    } else {
+        spdlog::warn("Ignoring boot ROM with unexpected size {} bytes", data.size());
+    }
+}
+
 void GameBoy::ApplyBootColorization() {
     if (m_rom_data.size() < 0x150 || m_cpu->IsCGBMode()) return;
     BootColorization palettes = ComputeBootColorization(m_rom_data);
@@ -337,6 +359,21 @@ void GameBoy::RegisterIOHandlers() {
         [this](u16, u8 value) {
             if (m_cpu->IsCGBMode()) {
                 m_cpu->ArmSpeedSwitch((value & 0x01) != 0);
+            }
+        }
+    );
+
+    // RP - CGB infrared port (0xFF56). Only the LED bit and the read-enable
+    // bits are writable; with no receiver attached, the data bit always
+    // reads 1 ("no light seen") and unused bits 2-5 read 1.
+    m_memory->RegisterIOHandler(0xFF56,
+        [this](u16) -> u8 {
+            if (!m_cpu->IsCGBMode()) return 0xFF;
+            return 0x3E | (m_rp & 0xC1);
+        },
+        [this](u16, u8 value) {
+            if (m_cpu->IsCGBMode()) {
+                m_rp = value & 0xC1;
             }
         }
     );
@@ -420,7 +457,7 @@ void GameBoy::HDMATransferBlock() {
 
 // Save state file layout: magic, version, then each component in order
 static constexpr u32 STATE_MAGIC = 0x53574D44;  // "DMWS"
-static constexpr u32 STATE_VERSION = 4;         // v4: RTC, window line, OPRI
+static constexpr u32 STATE_VERSION = 5;         // v5: boot ROM overlay flag
 
 std::string GameBoy::StateSlotPath(int slot) const {
     return std::filesystem::path(m_save_path)

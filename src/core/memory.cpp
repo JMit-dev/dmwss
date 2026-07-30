@@ -23,6 +23,7 @@ void Memory::Reset() {
     m_ie_register = 0;
     m_vram_bank = 0;
     m_wram_bank = 1;
+    m_boot_active = !m_boot_rom.empty();
 
     // Initialize page tables
     InitializePageTables();
@@ -79,6 +80,17 @@ void Memory::RegisterBankingHandlers() {
         }
     );
 
+    // BANK - boot ROM disable (0xFF50): the boot ROM's final write
+    // unmaps it permanently until the next reset
+    RegisterIOHandler(0xFF50,
+        [](u16) -> u8 { return 0xFF; },
+        [this](u16, u8 value) {
+            if (value != 0) {
+                m_boot_active = false;
+            }
+        }
+    );
+
     // SVBK - WRAM bank select (0xFF70, CGB only); bank 0 selects bank 1
     RegisterIOHandler(0xFF70,
         [this](u16) -> u8 {
@@ -105,6 +117,12 @@ u8 Memory::Read(u16 address) const {
 
     // Slow path: handle special regions
     if (address >= ROM_BANK_0_START && address <= ROM_BANK_N_END) {
+        // Boot ROM overlays the start of the cartridge until unmapped;
+        // the CGB image leaves 0x100-0x1FF open so the header stays visible
+        if (UNLIKELY(m_boot_active) && address < m_boot_rom.size() &&
+            (address < 0x100 || address >= 0x200)) {
+            return m_boot_rom[address];
+        }
         // ROM access - delegate to MBC
         if (m_mbc) {
             return m_mbc->Read(address);
@@ -317,6 +335,7 @@ void Memory::SaveState(StateBuffer& state) const {
     state.Write(m_ie_register);
     state.Write(m_vram_bank);
     state.Write(m_wram_bank);
+    state.Write(m_boot_active);
     if (m_mbc) {
         m_mbc->SaveState(state);
     }
@@ -330,7 +349,8 @@ bool Memory::LoadState(StateBuffer& state) {
               state.ReadBytes(m_io.data(), m_io.size()) &&
               state.Read(m_ie_register) &&
               state.Read(m_vram_bank) &&
-              state.Read(m_wram_bank);
+              state.Read(m_wram_bank) &&
+              state.Read(m_boot_active);
     if (ok && m_mbc) {
         ok = m_mbc->LoadState(state);
     }

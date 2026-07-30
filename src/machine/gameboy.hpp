@@ -29,6 +29,11 @@ public:
     // (no-op for CGB-mode games, which drive their own palettes)
     void ApplyBootColorization();
 
+    // Provide a boot ROM image; classified by size (256 bytes = DMG,
+    // 2304 bytes = CGB). The matching image runs on subsequent ROM
+    // loads/resets, showing the real logo scroll before the game starts.
+    void SetBootROM(const std::vector<u8>& data);
+
     // Persist battery-backed cartridge RAM (no-op without a battery cart)
     void SaveBattery();
 
@@ -91,6 +96,13 @@ private:
     std::vector<u8> m_rom_data;
     std::string m_save_path;  // Battery RAM file (.sav next to the ROM)
     std::vector<Cheat> m_cheats;
+
+    // Optional user-supplied boot ROM images
+    std::vector<u8> m_dmg_boot;
+    std::vector<u8> m_cgb_boot;
+
+    // CGB infrared port (RP, 0xFF56): stubbed, no receiver attached
+    u8 m_rp = 0;
 
     // CGB VRAM DMA (HDMA1-5): general-purpose transfers run instantly,
     // HBlank transfers copy one 16-byte block per visible HBlank

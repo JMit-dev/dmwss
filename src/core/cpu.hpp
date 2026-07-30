@@ -50,6 +50,11 @@ public:
 
     // Get current state (for debugging)
     u16 GetPC() const { return m_regs.pc; }
+
+    // Start execution in a mapped boot ROM instead of the cartridge
+    // entry point; the boot code sets up every other register itself
+    void StartFromBootROM() { m_regs.pc = 0x0000; }
+
     u16 GetSP() const { return m_regs.sp; }
     u8 GetA() const { return m_regs.a; }
     u8 GetF() const { return m_regs.f; }

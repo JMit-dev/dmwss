@@ -3,6 +3,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <vector>
 
 // Forward declarations
 class MBC;
@@ -84,6 +85,12 @@ public:
     bool IsCGBMode() const { return m_cgb_mode; }
     u8 GetVRAMBankIndex() const { return m_vram_bank; }
 
+    // Optional boot ROM overlay: 256 bytes (DMG) or 2304 bytes (CGB,
+    // with the 0x100-0x1FF header window uncovered). Active from Reset
+    // until the game/boot code writes 0xFF50. Empty disables it.
+    void SetBootROM(std::vector<u8> data) { m_boot_rom = std::move(data); }
+    bool IsBootROMActive() const { return m_boot_active; }
+
     // Reset memory
     void Reset();
 
@@ -120,6 +127,10 @@ private:
     bool m_cgb_mode = false;
     u8 m_vram_bank = 0;   // VBK: 0-1
     u8 m_wram_bank = 1;   // SVBK: 1-7 (0 maps to 1)
+
+    // Boot ROM overlay
+    std::vector<u8> m_boot_rom;
+    bool m_boot_active = false;
 
     // Initialize page tables
     void InitializePageTables();
