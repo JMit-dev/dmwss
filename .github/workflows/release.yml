@@ -165,11 +165,17 @@ jobs:
     # Qt6's CMake Android support cross-compiles the app with the
     # Android-target Qt libs, but still needs a matching host (Linux)
     # Qt install to run moc/rcc/uic during the build - hence two installs.
+    # Each install-qt-action call exports QT_ROOT_DIR pointing at exactly
+    # where it put things; the host one is saved before the second call
+    # overwrites it.
     - name: Install host Qt6
       uses: jurplel/install-qt-action@v4
       with:
         version: ${{ env.QT_VERSION }}
         dir: ${{ github.workspace }}/qt-host
+
+    - name: Save host Qt path
+      run: echo "HOST_QT_DIR=$QT_ROOT_DIR" >> "$GITHUB_ENV"
 
     - name: Install Qt6 for Android
       uses: jurplel/install-qt-action@v4
@@ -182,15 +188,13 @@ jobs:
     - name: Configure CMake
       run: |
         NDK_ROOT="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
-        HOST_QT=$(find "${{ github.workspace }}/qt-host/Qt" -maxdepth 2 -type d -name "gcc_64" | head -1)
-        ANDROID_QT=$(find "${{ github.workspace }}/qt-android/Qt" -maxdepth 2 -type d -name "${{ env.ANDROID_QT_ARCH }}" | head -1)
 
         cmake -B build-android -S . \
           -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
           -DANDROID_ABI=${{ env.ANDROID_ABI }} \
           -DANDROID_PLATFORM=${{ env.ANDROID_PLATFORM }} \
-          -DQT_HOST_PATH="$HOST_QT" \
-          -DCMAKE_PREFIX_PATH="$ANDROID_QT" \
+          -DQT_HOST_PATH="$HOST_QT_DIR" \
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
           -DCMAKE_BUILD_TYPE=Release \
           -DDMWSS_NATIVE=OFF
 
