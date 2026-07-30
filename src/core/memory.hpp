@@ -47,8 +47,8 @@ public:
     static constexpr size_t IO_SIZE    = 128;    // 128 bytes
 
     // Software fastmem page table configuration
-    static constexpr size_t PAGE_SIZE = 256;     // 256 bytes per page
-    static constexpr size_t PAGE_COUNT = 256;    // 64KB / 256 = 256 pages
+    static constexpr size_t FASTMEM_PAGE_SIZE = 256;     // 256 bytes per page
+    static constexpr size_t FASTMEM_PAGE_COUNT = 256;    // 64KB / 256 = 256 pages
 
     Memory();
     ~Memory();
@@ -117,8 +117,8 @@ private:
 
     // Software fastmem page tables
     // Each entry points to the start of a page, or nullptr for I/O regions
-    std::array<u8*, PAGE_COUNT> m_read_page_table;
-    std::array<u8*, PAGE_COUNT> m_write_page_table;
+    std::array<u8*, FASTMEM_PAGE_COUNT> m_read_page_table;
+    std::array<u8*, FASTMEM_PAGE_COUNT> m_write_page_table;
 
     // Memory Bank Controller (for ROM banking)
     std::unique_ptr<MBC> m_mbc;

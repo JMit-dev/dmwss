@@ -48,9 +48,9 @@ void Memory::InitializePageTables() {
 void Memory::UpdateBankedPageTables() {
     auto map = [this](u16 start, u8* target, size_t pages) {
         for (size_t i = 0; i < pages; i++) {
-            u16 page_index = (start / PAGE_SIZE) + i;
-            m_read_page_table[page_index] = target + (i * PAGE_SIZE);
-            m_write_page_table[page_index] = target + (i * PAGE_SIZE);
+            u16 page_index = (start / FASTMEM_PAGE_SIZE) + i;
+            m_read_page_table[page_index] = target + (i * FASTMEM_PAGE_SIZE);
+            m_write_page_table[page_index] = target + (i * FASTMEM_PAGE_SIZE);
         }
     };
 
@@ -106,8 +106,8 @@ void Memory::RegisterBankingHandlers() {
 }
 
 u8 Memory::Read(u16 address) const {
-    const u8 page = address / PAGE_SIZE;
-    const u8 offset = address % PAGE_SIZE;
+    const u8 page = address / FASTMEM_PAGE_SIZE;
+    const u8 offset = address % FASTMEM_PAGE_SIZE;
     u8* page_ptr = m_read_page_table[page];
 
     if (LIKELY(page_ptr != nullptr)) {
@@ -163,8 +163,8 @@ u8 Memory::Read(u16 address) const {
 }
 
 void Memory::Write(u16 address, u8 value) {
-    const u8 page = address / PAGE_SIZE;
-    const u8 offset = address % PAGE_SIZE;
+    const u8 page = address / FASTMEM_PAGE_SIZE;
+    const u8 offset = address % FASTMEM_PAGE_SIZE;
     u8* page_ptr = m_write_page_table[page];
 
     if (LIKELY(page_ptr != nullptr)) {
