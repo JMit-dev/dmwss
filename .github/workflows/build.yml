@@ -19,11 +19,19 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y qt6-base-dev libgl1-mesa-dev libwayland-dev wayland-protocols libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
 
+    # Blargg's test suite (fetched before configure: CMake registers the
+    # test ROMs it finds at configure time)
+    - name: Fetch test ROMs
+      run: git clone --depth 1 https://github.com/retrio/gb-test-roms.git test-roms/gb-test-roms
+
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
       run: cmake --build build --config Release
+
+    - name: Test
+      run: ctest --test-dir build --output-on-failure -C Release
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -43,11 +51,17 @@ jobs:
       with:
         version: '6.5.0'
 
+    - name: Fetch test ROMs
+      run: git clone --depth 1 https://github.com/retrio/gb-test-roms.git test-roms/gb-test-roms
+
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
       run: cmake --build build --config Release
+
+    - name: Test
+      run: ctest --test-dir build --output-on-failure -C Release
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -65,6 +79,9 @@ jobs:
     - name: Install Qt6
       run: brew install qt@6
 
+    - name: Fetch test ROMs
+      run: git clone --depth 1 https://github.com/retrio/gb-test-roms.git test-roms/gb-test-roms
+
     - name: Configure CMake
       run: |
         export Qt6_DIR=$(brew --prefix qt@6)/lib/cmake/Qt6
@@ -72,6 +89,9 @@ jobs:
 
     - name: Build
       run: cmake --build build --config Release
+
+    - name: Test
+      run: ctest --test-dir build --output-on-failure -C Release
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
