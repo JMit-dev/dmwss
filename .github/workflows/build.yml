@@ -46,10 +46,12 @@ jobs:
       with:
         submodules: recursive
 
+    # Qt 6.5.0 headers use stdext::checked_array_iterator, which newer
+    # MSVC STLs removed; 6.8 LTS builds cleanly against them
     - name: Install Qt6
-      uses: jurplel/install-qt-action@v3
+      uses: jurplel/install-qt-action@v4
       with:
-        version: '6.5.0'
+        version: '6.8.2'
 
     - name: Fetch test ROMs
       run: git clone --depth 1 https://github.com/retrio/gb-test-roms.git test-roms/gb-test-roms
