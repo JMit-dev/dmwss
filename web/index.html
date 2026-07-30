@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dmwss - Game Boy Emulator</title>
+<style>
+  :root {
+    --bg: #1a1c22;
+    --panel: #23262f;
+    --edge: #343845;
+    --text: #d6d9e0;
+    --dim: #8a8fa0;
+    --accent: #8bc070;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 28px 16px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 2px;
+  }
+  h1 span { color: var(--accent); }
+  .screen-shell {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    padding: 18px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  }
+  canvas {
+    display: block;
+    width: min(480px, 90vw);
+    aspect-ratio: 160 / 144;
+    background: #9bbc0f;
+    image-rendering: pixelated;
+    border-radius: 4px;
+  }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  button, .file-label {
+    background: var(--accent);
+    color: #14210e;
+    border: none;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 700;
+    padding: 10px 20px;
+    cursor: pointer;
+  }
+  button:hover, .file-label:hover { filter: brightness(1.1); }
+  input[type="file"] { display: none; }
+  #status { color: var(--dim); font-size: 13px; min-height: 1em; }
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    padding: 14px 22px;
+  }
+  .controls h2 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    text-align: center;
+  }
+  .controls table { border-collapse: collapse; }
+  .controls td { padding: 3px 14px; font-size: 14px; }
+  .controls td:first-child { color: var(--dim); text-align: right; }
+  kbd {
+    background: var(--bg);
+    border: 1px solid var(--edge);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 8px;
+    font: inherit;
+    font-size: 13px;
+  }
+  footer { color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>dmwss <span>//</span> game boy emulator</h1>
+
+  <div class="screen-shell">
+    <canvas id="screen" width="160" height="144"></canvas>
+  </div>
+
+  <div class="row">
+    <label class="file-label" for="rom-input">Load ROM (.gb / .gbc)</label>
+    <input type="file" id="rom-input" accept=".gb,.gbc">
+  </div>
+  <div id="status">No ROM loaded</div>
+
+  <div class="controls">
+    <h2>Controls</h2>
+    <table>
+      <tr><td>D-Pad</td><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td></tr>
+      <tr><td>A</td><td><kbd>Z</kbd></td></tr>
+      <tr><td>B</td><td><kbd>X</kbd></td></tr>
+      <tr><td>Select</td><td><kbd>Space</kbd></td></tr>
+      <tr><td>Start</td><td><kbd>Enter</kbd></td></tr>
+    </table>
+  </div>
+
+  <footer>runs entirely in your browser &mdash; ROMs never leave your machine</footer>
+
+<script src="dmwss.js"></script>
+<script>
+(async function() {
+  const Module = await createDmwss();
+  const canvas = document.getElementById('screen');
+  const ctx = canvas.getContext('2d');
+  const status = document.getElementById('status');
+
+  const WIDTH = 160, HEIGHT = 144;
+  const FRAME_MS = 1000 / 59.7275;
+  const AUDIO_RATE = 48000;
+  const AUDIO_MAX_FRAMES = 4096;
+
+  let running = false;
+  let joypad = 0xFF;  // Bit clear = pressed
+  let audioCtx = null;
+  let audioTime = 0;
+  const audioBufPtr = Module._malloc(AUDIO_MAX_FRAMES * 4);  // stereo s16
+
+  // Fixed keyboard bindings (same as the desktop defaults):
+  // joypad bits 0=Right 1=Left 2=Up 3=Down 4=A 5=B 6=Select 7=Start
+  const KEYMAP = {
+    'ArrowRight': 0, 'ArrowLeft': 1, 'ArrowUp': 2, 'ArrowDown': 3,
+    'KeyZ': 4, 'KeyX': 5, 'Space': 6, 'Enter': 7
+  };
+
+  document.addEventListener('keydown', (e) => {
+    const bit = KEYMAP[e.code];
+    if (bit === undefined) return;
+    e.preventDefault();
+    joypad &= ~(1 << bit);
+    Module._dmwss_set_joypad(joypad);
+  });
+  document.addEventListener('keyup', (e) => {
+    const bit = KEYMAP[e.code];
+    if (bit === undefined) return;
+    e.preventDefault();
+    joypad |= (1 << bit);
+    Module._dmwss_set_joypad(joypad);
+  });
+
+  document.getElementById('rom-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const ptr = Module._malloc(bytes.length);
+    Module.HEAPU8.set(bytes, ptr);
+    const ok = Module._dmwss_load_rom(ptr, bytes.length);
+    Module._free(ptr);
+
+    if (!ok) {
+      status.textContent = 'Failed to load ' + file.name;
+      return;
+    }
+    status.textContent = 'Playing: ' + file.name;
+
+    // Audio needs a user gesture to start; the file pick is one
+    if (!audioCtx) {
+      audioCtx = new AudioContext({ sampleRate: AUDIO_RATE });
+    }
+    audioCtx.resume();
+
+    if (!running) {
+      running = true;
+      last = performance.now();
+      requestAnimationFrame(loop);
+    }
+  });
+
+  function draw() {
+    const ptr = Module._dmwss_framebuffer();
+    if (!ptr) return;
+    // Views are recreated each frame: heap growth invalidates old ones
+    const pixels = new Uint8ClampedArray(Module.HEAPU8.buffer, ptr, WIDTH * HEIGHT * 4);
+    ctx.putImageData(new ImageData(pixels, WIDTH, HEIGHT), 0, 0);
+  }
+
+  function pumpAudio() {
+    if (!audioCtx) return;
+    const frames = Module._dmwss_read_audio(audioBufPtr, AUDIO_MAX_FRAMES);
+    if (frames === 0) return;
+    const data = new Int16Array(Module.HEAPU8.buffer, audioBufPtr, frames * 2);
+    const buffer = audioCtx.createBuffer(2, frames, AUDIO_RATE);
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+    for (let i = 0; i < frames; i++) {
+      left[i] = data[i * 2] / 32768;
+      right[i] = data[i * 2 + 1] / 32768;
+    }
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    if (audioTime < audioCtx.currentTime) {
+      audioTime = audioCtx.currentTime + 0.02;
+    }
+    source.start(audioTime);
+    audioTime += frames / AUDIO_RATE;
+  }
+
+  // Fixed-timestep loop so speed is right on 60/120/144 Hz displays
+  let last = 0;
+  let acc = 0;
+  function loop(now) {
+    if (!running) return;
+    acc += now - last;
+    last = now;
+    if (acc > 100) acc = 100;  // Don't fast-forward after a background tab
+    while (acc >= FRAME_MS) {
+      Module._dmwss_run_frame();
+      acc -= FRAME_MS;
+    }
+    draw();
+    pumpAudio();
+    requestAnimationFrame(loop);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (audioCtx) audioCtx.suspend();
+    } else {
+      if (audioCtx && running) audioCtx.resume();
+      last = performance.now();
+      acc = 0;
+    }
+  });
+})();
+</script>
+</body>
+</html>
