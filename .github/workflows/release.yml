@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Qt6
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qt6-base-dev libgl1-mesa-dev libwayland-dev wayland-protocols libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+
+    # DMWSS_NATIVE=OFF: release binaries must run on any x86_64, not just
+    # the CI runner's CPU
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DDMWSS_NATIVE=OFF
+
+    - name: Build
+      run: cmake --build build --config Release --target dmwss
+
+    # Packaged as an AppImage: a single self-contained file that bundles
+    # Qt, needs no install, and just runs
+    - name: Package AppImage
+      run: |
+        wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+        wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+        chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+        cp linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-qt
+        chmod +x linuxdeploy-plugin-qt
+
+        export PATH="$PWD:/usr/lib/qt6/bin:$PATH"
+        export APPIMAGE_EXTRACT_AND_RUN=1
+        export ARCH=x86_64
+        export QMAKE="$(command -v qmake6 || command -v qmake)"
+
+        mkdir -p AppDir
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir -e build/dmwss \
+          -d packaging/dmwss.desktop -i packaging/icon.png --plugin qt
+        cp -r shaders AppDir/usr/bin/shaders
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+
+        mv dmwss*.AppImage dmwss-linux-x86_64.AppImage
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-linux
+        path: dmwss-linux-x86_64.AppImage
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Qt6
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.2'
+
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DDMWSS_NATIVE=OFF
+
+    - name: Build
+      run: cmake --build build --config Release --target dmwss
+
+    - name: Bundle Qt dependencies
+      run: windeployqt --release build\Release\dmwss.exe
+
+    - name: Package zip
+      run: Compress-Archive -Path build\Release\* -DestinationPath dmwss-windows-x86_64.zip
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-windows
+        path: dmwss-windows-x86_64.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Qt6
+      run: brew install qt@6
+
+    - name: Configure CMake
+      run: |
+        export Qt6_DIR=$(brew --prefix qt@6)/lib/cmake/Qt6
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -DDMWSS_NATIVE=OFF
+
+    - name: Build
+      run: cmake --build build --config Release --target dmwss
+
+    - name: Bundle Qt dependencies
+      run: $(brew --prefix qt@6)/bin/macdeployqt build/dmwss.app
+
+    - name: Package zip
+      run: ditto -c -k --sequesterRsrc --keepParent build/dmwss.app dmwss-macos-arm64.zip
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-macos
+        path: dmwss-macos-arm64.zip
+
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - uses: mymindstorm/setup-emsdk@v14
+
+    - name: Build web frontend
+      run: sh web/build.sh
+
+    - name: Package zip
+      run: cd web/dist && zip -r ../../dmwss-web.zip .
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-web
+        path: dmwss-web.zip
+
+  publish:
+    needs: [ build-linux, build-windows, build-macos, build-web ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: release-*
+        merge-multiple: true
+
+    - uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dmwss-linux-x86_64.AppImage
+          dmwss-windows-x86_64.zip
+          dmwss-macos-arm64.zip
+          dmwss-web.zip
+        generate_release_notes: true
