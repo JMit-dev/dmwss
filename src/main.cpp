@@ -13,6 +13,9 @@
 #include <QSettings>
 #include <QFile>
 #include <QCoreApplication>
+#include <QStandardPaths>
+#include <QDir>
+#include <QFileInfo>
 #include <array>
 #include <spdlog/spdlog.h>
 #include "core/types.hpp"
@@ -143,6 +146,21 @@ private slots:
         );
 
         if (filename.isEmpty()) return;
+
+#ifdef Q_OS_ANDROID
+        // The Android picker returns a content:// URI, which is readable
+        // through Qt's file engine but has no writable sibling directory
+        // for .sav/.state files (and often isn't a stable path at all).
+        // Copy the ROM into app-private storage - always fully readable
+        // and writable, no permission prompts - and load from there so
+        // every existing sibling-file save path keeps working unchanged.
+        QString local_path = CopyROMToLocalStorage(filename);
+        if (local_path.isEmpty()) {
+            QMessageBox::critical(this, "Error", "Failed to import ROM");
+            return;
+        }
+        filename = local_path;
+#endif
 
         // Persist the previous game's cheats before they are cleared
         SaveCheats();
@@ -553,6 +571,38 @@ private:
         title.replace('/', '_');
         return "cheats/" + (title.isEmpty() ? "unknown" : title);
     }
+
+#ifdef Q_OS_ANDROID
+    // Copies a picked ROM (possibly a content:// URI) into app-private
+    // storage and returns the local path, or an empty string on failure.
+    QString CopyROMToLocalStorage(const QString& source_path) {
+        QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                      + "/roms";
+        QDir().mkpath(dir);
+
+        QString name = QFileInfo(source_path).fileName();
+        if (name.isEmpty()) name = "rom.gb";
+        QString dest_path = dir + "/" + name;
+
+        QFile source(source_path);
+        if (!source.open(QIODevice::ReadOnly)) {
+            spdlog::error("Failed to open picked ROM: {}", source_path.toStdString());
+            return QString();
+        }
+        QByteArray data = source.readAll();
+        source.close();
+
+        QFile dest(dest_path);
+        if (!dest.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            spdlog::error("Failed to write local ROM copy: {}", dest_path.toStdString());
+            return QString();
+        }
+        dest.write(data);
+        dest.close();
+
+        return dest_path;
+    }
+#endif
 
     void SaveCheats() {
         if (!m_gameboy || !m_gameboy->IsRunning()) return;
