@@ -38,6 +38,9 @@ int main(int argc, char* argv[]) {
     file.read(reinterpret_cast<char*>(rom.data()), rom.size());
 
     GameBoy gameboy;
+    // Blargg's suites test DMG behavior (e.g. the OAM corruption bug),
+    // but the ROM headers are flagged CGB-compatible - run them as a DMG
+    gameboy.SetForceDMG(true);
     if (!gameboy.LoadROM(rom)) {
         std::fprintf(stderr, "failed to load rom: %s\n", argv[1]);
         return 2;

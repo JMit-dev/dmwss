@@ -8,6 +8,7 @@ Memory::Memory()
     : m_ie_register(0)
     , m_mbc(nullptr) {
     Reset();
+    RegisterBankingHandlers();
 }
 
 Memory::~Memory() = default;
@@ -20,6 +21,8 @@ void Memory::Reset() {
     m_hram.fill(0);
     m_io.fill(0);
     m_ie_register = 0;
+    m_vram_bank = 0;
+    m_wram_bank = 1;
 
     // Initialize page tables
     InitializePageTables();
@@ -32,35 +35,62 @@ void Memory::InitializePageTables() {
     m_read_page_table.fill(nullptr);
     m_write_page_table.fill(nullptr);
 
-    // Map VRAM (0x8000-0x9FFF) - 32 pages (8KB / 256 bytes)
-    for (size_t i = 0; i < 32; i++) {
-        u16 page_index = (VRAM_START + i * PAGE_SIZE) / PAGE_SIZE;
-        m_read_page_table[page_index] = m_vram.data() + (i * PAGE_SIZE);
-        m_write_page_table[page_index] = m_vram.data() + (i * PAGE_SIZE);
-    }
-
-    // Map WRAM (0xC000-0xDFFF) - 32 pages (8KB / 256 bytes)
-    for (size_t i = 0; i < 32; i++) {
-        u16 page_index = (WRAM_START + i * PAGE_SIZE) / PAGE_SIZE;
-        m_read_page_table[page_index] = m_wram.data() + (i * PAGE_SIZE);
-        m_write_page_table[page_index] = m_wram.data() + (i * PAGE_SIZE);
-    }
-
-    // Map Echo RAM (0xE000-0xFDFF) - mirrors WRAM
-    // Echo RAM is WRAM - 0x2000, so we map it to the same physical pages
-    for (size_t i = 0; i < 30; i++) {  // 0xFE00 - 0xE000 = 0x1E00 = 7680 bytes = 30 pages
-        u16 page_index = (ECHO_RAM_START + i * PAGE_SIZE) / PAGE_SIZE;
-        size_t wram_offset = i * PAGE_SIZE;
-        if (wram_offset < WRAM_SIZE) {
-            m_read_page_table[page_index] = m_wram.data() + wram_offset;
-            m_write_page_table[page_index] = m_wram.data() + wram_offset;
-        }
-    }
+    // VRAM, WRAM and Echo RAM depend on the current VBK/SVBK banks
+    UpdateBankedPageTables();
 
     // HRAM (0xFF80-0xFFFE) is in the I/O page, handled by slow path
     // OAM, I/O, and ROM are also handled by slow path
 
     spdlog::trace("Page tables initialized");
+}
+
+void Memory::UpdateBankedPageTables() {
+    auto map = [this](u16 start, u8* target, size_t pages) {
+        for (size_t i = 0; i < pages; i++) {
+            u16 page_index = (start / PAGE_SIZE) + i;
+            m_read_page_table[page_index] = target + (i * PAGE_SIZE);
+            m_write_page_table[page_index] = target + (i * PAGE_SIZE);
+        }
+    };
+
+    // VRAM (0x8000-0x9FFF): whole region switches with VBK
+    map(VRAM_START, m_vram.data() + m_vram_bank * VRAM_BANK_SIZE, 32);
+
+    // WRAM: 0xC000-0xCFFF is always bank 0, 0xD000-0xDFFF switches with SVBK
+    u8* wram_hi = m_wram.data() + m_wram_bank * WRAM_BANK_SIZE;
+    map(WRAM_START, m_wram.data(), 16);
+    map(WRAM_START + 0x1000, wram_hi, 16);
+
+    // Echo RAM (0xE000-0xFDFF) mirrors 0xC000-0xDDFF
+    map(ECHO_RAM_START, m_wram.data(), 16);
+    map(ECHO_RAM_START + 0x1000, wram_hi, 14);
+}
+
+void Memory::RegisterBankingHandlers() {
+    // VBK - VRAM bank select (0xFF4F, CGB only)
+    RegisterIOHandler(0xFF4F,
+        [this](u16) -> u8 {
+            return m_cgb_mode ? (0xFE | m_vram_bank) : 0xFF;
+        },
+        [this](u16, u8 value) {
+            if (!m_cgb_mode) return;
+            m_vram_bank = value & 0x01;
+            UpdateBankedPageTables();
+        }
+    );
+
+    // SVBK - WRAM bank select (0xFF70, CGB only); bank 0 selects bank 1
+    RegisterIOHandler(0xFF70,
+        [this](u16) -> u8 {
+            return m_cgb_mode ? (0xF8 | m_wram_bank) : 0xFF;
+        },
+        [this](u16, u8 value) {
+            if (!m_cgb_mode) return;
+            m_wram_bank = value & 0x07;
+            if (m_wram_bank == 0) m_wram_bank = 1;
+            UpdateBankedPageTables();
+        }
+    );
 }
 
 u8 Memory::Read(u16 address) const {
@@ -285,6 +315,8 @@ void Memory::SaveState(StateBuffer& state) const {
     state.WriteBytes(m_hram.data(), m_hram.size());
     state.WriteBytes(m_io.data(), m_io.size());
     state.Write(m_ie_register);
+    state.Write(m_vram_bank);
+    state.Write(m_wram_bank);
     if (m_mbc) {
         m_mbc->SaveState(state);
     }
@@ -296,9 +328,14 @@ bool Memory::LoadState(StateBuffer& state) {
               state.ReadBytes(m_oam.data(), m_oam.size()) &&
               state.ReadBytes(m_hram.data(), m_hram.size()) &&
               state.ReadBytes(m_io.data(), m_io.size()) &&
-              state.Read(m_ie_register);
+              state.Read(m_ie_register) &&
+              state.Read(m_vram_bank) &&
+              state.Read(m_wram_bank);
     if (ok && m_mbc) {
         ok = m_mbc->LoadState(state);
+    }
+    if (ok) {
+        UpdateBankedPageTables();
     }
     return ok;
 }

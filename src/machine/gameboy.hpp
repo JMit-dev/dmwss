@@ -21,6 +21,10 @@ public:
     bool LoadROM(const std::string& path);
     bool LoadROM(const std::vector<u8>& rom_data);
 
+    // Force dual-mode carts to run as a DMG (set before LoadROM);
+    // CGB-only carts ignore this
+    void SetForceDMG(bool force) { m_force_dmg = force; }
+
     // Persist battery-backed cartridge RAM (no-op without a battery cart)
     void SaveBattery();
 
@@ -76,6 +80,7 @@ private:
 
     // State
     bool m_running;
+    bool m_force_dmg = false;
     u32 m_total_cycles;
     u8 m_joypad_state;
     u8 m_joypad_select;  // P1 bits 4-5: button group selection
@@ -83,11 +88,21 @@ private:
     std::string m_save_path;  // Battery RAM file (.sav next to the ROM)
     std::vector<Cheat> m_cheats;
 
+    // CGB VRAM DMA (HDMA1-5): general-purpose transfers run instantly,
+    // HBlank transfers copy one 16-byte block per visible HBlank
+    u16 m_hdma_source = 0;
+    u16 m_hdma_dest = 0;
+    u8 m_hdma_blocks = 0;    // Remaining 16-byte blocks
+    bool m_hdma_active = false;
+
     // Timing
     static constexpr u32 CYCLES_PER_FRAME = 70224;  // ~59.73 Hz
 
     // Initialize I/O handlers
     void RegisterIOHandlers();
+
+    // Copy one 16-byte HDMA block and advance the transfer
+    void HDMATransferBlock();
 
     // Path for a given save state slot, derived from m_save_path
     std::string StateSlotPath(int slot) const;

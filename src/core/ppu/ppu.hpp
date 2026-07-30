@@ -3,6 +3,7 @@
 #include "../memory/memory.hpp"
 #include "../scheduler/scheduler.hpp"
 #include <array>
+#include <functional>
 
 class StateBuffer;
 
@@ -62,6 +63,8 @@ public:
         bool y_flip() const { return (flags & 0x40) != 0; }
         bool x_flip() const { return (flags & 0x20) != 0; }
         u8 palette() const { return (flags & 0x10) ? 1 : 0; }  // DMG: 0=OBP0, 1=OBP1
+        u8 cgb_palette() const { return flags & 0x07; }        // CGB: OBJ palette 0-7
+        u8 vram_bank() const { return (flags >> 3) & 1; }      // CGB: tile VRAM bank
     };
 
     PPU(Memory& memory, Scheduler& scheduler);
@@ -88,6 +91,15 @@ public:
     // (0 = lightest, 3 = darkest). Cosmetic only, not serialized.
     void SetDisplayPalette(const std::array<u32, 4>& colors) { m_display_palette = colors; }
 
+    // CGB mode enables color palette RAM, tile attributes, and the
+    // LCDC bit 0 master-priority interpretation
+    void SetCGBMode(bool enabled) { m_cgb_mode = enabled; }
+
+    // Called at the start of every HBlank of a visible scanline
+    // (used by CGB HBlank DMA)
+    using HBlankCallback = std::function<void()>;
+    void SetHBlankCallback(HBlankCallback callback) { m_hblank_callback = std::move(callback); }
+
     // DMG OAM corruption bug: called by the CPU when an instruction
     // performs a 16-bit increment/decrement (or stack access) with a
     // value in the 0xFE00-0xFEFF range. Corrupts OAM if the PPU is in
@@ -112,6 +124,19 @@ private:
     std::array<u32, 4> m_display_palette = {
         0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000
     };
+
+    // CGB state
+    bool m_cgb_mode = false;
+    u8 m_bcps = 0;                          // BG palette index (0xFF68)
+    u8 m_ocps = 0;                          // OBJ palette index (0xFF6A)
+    std::array<u8, 64> m_bg_pal_ram{};      // 8 palettes x 4 colors x RGB555
+    std::array<u8, 64> m_obj_pal_ram{};
+    HBlankCallback m_hblank_callback;
+
+    // Per-scanline BG/window color indices and CGB BG-priority flags,
+    // used to resolve sprite-vs-background priority
+    std::array<u8, SCREEN_WIDTH> m_line_color{};
+    std::array<bool, SCREEN_WIDTH> m_line_priority{};
 
     // Sprite buffer for current scanline
     std::array<Sprite, 10> m_sprite_buffer;  // Max 10 sprites per line
@@ -148,8 +173,13 @@ private:
     void CorruptOAMIncDec(u32 row);
 
     // Tile/pixel helpers
-    u8 GetTilePixel(u16 tile_data_addr, u8 x, u8 y);
+    u8 GetTilePixel(const u8* vram, u16 tile_data_addr, u8 x, u8 y);
     u32 GetColor(u8 palette, u8 color_id);
+    u32 GetCGBColor(const std::array<u8, 64>& pal_ram, u8 palette, u8 color_id);
+
+    // Shared BG/window tile row renderer (map_y/map_x in tilemap pixels)
+    void RenderTileLayerPixel(u8 scanline, u8 screen_x, u16 tile_map_base,
+                              bool signed_addressing, u8 map_x, u8 map_y);
 
     // I/O register handlers
     void RegisterIOHandlers();

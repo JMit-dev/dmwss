@@ -39,6 +39,13 @@ GameBoy::GameBoy()
         }
     });
 
+    // CGB HBlank DMA: one 16-byte block per visible HBlank while active
+    m_ppu->SetHBlankCallback([this]() {
+        if (m_hdma_active) {
+            HDMATransferBlock();
+        }
+    });
+
     RegisterIOHandlers();
 
     spdlog::info("GameBoy system initialized");
@@ -115,12 +122,16 @@ bool GameBoy::LoadROM(const std::vector<u8>& rom_data) {
     u8 rom_size = m_rom_data[0x148];
     u8 ram_size = m_rom_data[0x149];
 
-    // Boot as a CGB only for CGB-exclusive carts (header 0x143 == 0xC0);
-    // dual-mode carts (0x80) run in the emulator's native DMG mode
-    bool cgb_only = (m_rom_data[0x143] == 0xC0);
-    m_cpu->SetCGBMode(cgb_only);
-    if (cgb_only) {
-        spdlog::info("CGB-only cartridge, booting in CGB mode");
+    // Boot in CGB mode for any CGB-aware cart (header 0x143 bit 7:
+    // 0x80 = dual-mode, 0xC0 = CGB-only); plain DMG carts stay DMG.
+    // Dual-mode carts can be forced to DMG, CGB-only carts cannot.
+    bool cgb = (m_rom_data[0x143] & 0x80) != 0 &&
+               (!m_force_dmg || m_rom_data[0x143] == 0xC0);
+    m_cpu->SetCGBMode(cgb);
+    m_memory->SetCGBMode(cgb);
+    m_ppu->SetCGBMode(cgb);
+    if (cgb) {
+        spdlog::info("CGB-aware cartridge, booting in CGB mode");
     }
 
     if (!title.empty()) {
@@ -148,6 +159,10 @@ void GameBoy::Reset() {
     m_total_cycles = 0;
     m_joypad_state = 0xFF;
     m_joypad_select = 0x30;
+    m_hdma_source = 0;
+    m_hdma_dest = 0;
+    m_hdma_blocks = 0;
+    m_hdma_active = false;
 
     m_scheduler->Reset();
     m_memory->Reset();
@@ -315,12 +330,86 @@ void GameBoy::RegisterIOHandlers() {
         }
     );
 
+    // HDMA1-4 - CGB VRAM DMA source/destination (0xFF51-0xFF54).
+    // Source is masked to 16-byte alignment, destination to VRAM range.
+    m_memory->RegisterIOHandler(0xFF51,
+        [](u16) -> u8 { return 0xFF; },
+        [this](u16, u8 value) {
+            m_hdma_source = (m_hdma_source & 0x00FF) | (static_cast<u16>(value) << 8);
+        }
+    );
+    m_memory->RegisterIOHandler(0xFF52,
+        [](u16) -> u8 { return 0xFF; },
+        [this](u16, u8 value) {
+            m_hdma_source = (m_hdma_source & 0xFF00) | (value & 0xF0);
+        }
+    );
+    m_memory->RegisterIOHandler(0xFF53,
+        [](u16) -> u8 { return 0xFF; },
+        [this](u16, u8 value) {
+            m_hdma_dest = (m_hdma_dest & 0x00FF) | (static_cast<u16>(value & 0x1F) << 8);
+        }
+    );
+    m_memory->RegisterIOHandler(0xFF54,
+        [](u16) -> u8 { return 0xFF; },
+        [this](u16, u8 value) {
+            m_hdma_dest = (m_hdma_dest & 0xFF00) | (value & 0xF0);
+        }
+    );
+
+    // HDMA5 - CGB VRAM DMA control (0xFF55)
+    m_memory->RegisterIOHandler(0xFF55,
+        [this](u16) -> u8 {
+            if (!m_cpu->IsCGBMode()) return 0xFF;
+            if (m_hdma_active) {
+                return (m_hdma_blocks - 1) & 0x7F;
+            }
+            return 0xFF;  // Bit 7 set: no transfer active
+        },
+        [this](u16, u8 value) {
+            if (!m_cpu->IsCGBMode()) return;
+
+            if (m_hdma_active && (value & 0x80) == 0) {
+                // Writing with bit 7 clear stops an active HBlank DMA
+                m_hdma_active = false;
+                return;
+            }
+
+            m_hdma_blocks = (value & 0x7F) + 1;
+            if (value & 0x80) {
+                // HBlank DMA: one block per HBlank via the PPU callback
+                m_hdma_active = true;
+            } else {
+                // General-purpose DMA: the whole transfer runs at once
+                while (m_hdma_blocks > 0) {
+                    HDMATransferBlock();
+                }
+            }
+        }
+    );
+
     // PPU, APU and Timer register their own handlers in their constructors
+}
+
+void GameBoy::HDMATransferBlock() {
+    // Destination is always VRAM (0x8000-0x9FF0), routed through the
+    // current VBK bank by the fastmem page table
+    u16 dest = 0x8000 | (m_hdma_dest & 0x1FF0);
+    for (u16 i = 0; i < 16; i++) {
+        m_memory->Write(dest + i, m_memory->Read(m_hdma_source + i));
+    }
+
+    m_hdma_source += 16;
+    m_hdma_dest = (m_hdma_dest + 16) & 0x1FF0;
+    m_hdma_blocks--;
+    if (m_hdma_blocks == 0) {
+        m_hdma_active = false;
+    }
 }
 
 // Save state file layout: magic, version, then each component in order
 static constexpr u32 STATE_MAGIC = 0x53574D44;  // "DMWS"
-static constexpr u32 STATE_VERSION = 2;         // v2: added serial state
+static constexpr u32 STATE_VERSION = 3;         // v3: added CGB state
 
 std::string GameBoy::StateSlotPath(int slot) const {
     return std::filesystem::path(m_save_path)
@@ -343,6 +432,10 @@ bool GameBoy::SaveStateToFile(int slot) {
     state.Write(STATE_VERSION);
     state.Write(m_total_cycles);
     state.Write(m_joypad_select);
+    state.Write(m_hdma_source);
+    state.Write(m_hdma_dest);
+    state.Write(m_hdma_blocks);
+    state.Write(m_hdma_active);
     m_cpu->SaveState(state);
     m_memory->SaveState(state);
     m_ppu->SaveState(state);
@@ -394,6 +487,10 @@ bool GameBoy::LoadStateFromFile(int slot) {
 
     bool ok = state.Read(m_total_cycles) &&
               state.Read(m_joypad_select) &&
+              state.Read(m_hdma_source) &&
+              state.Read(m_hdma_dest) &&
+              state.Read(m_hdma_blocks) &&
+              state.Read(m_hdma_active) &&
               m_cpu->LoadState(state) &&
               m_memory->LoadState(state) &&
               m_ppu->LoadState(state) &&

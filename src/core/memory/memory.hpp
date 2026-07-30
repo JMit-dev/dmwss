@@ -33,9 +33,13 @@ public:
     static constexpr u16 HRAM_END         = 0xFFFE;
     static constexpr u16 IE_REGISTER      = 0xFFFF;
 
-    // Memory sizes
-    static constexpr size_t WRAM_SIZE  = 8192;   // 8KB
-    static constexpr size_t VRAM_SIZE  = 8192;   // 8KB
+    // Memory sizes (CGB sizes; DMG uses the first bank(s) only)
+    static constexpr size_t WRAM_BANK_SIZE = 4096;   // 4KB per bank
+    static constexpr size_t WRAM_BANKS = 8;          // CGB: 8 banks (DMG: 2)
+    static constexpr size_t WRAM_SIZE  = WRAM_BANK_SIZE * WRAM_BANKS;
+    static constexpr size_t VRAM_BANK_SIZE = 8192;   // 8KB per bank
+    static constexpr size_t VRAM_BANKS = 2;          // CGB: 2 banks (DMG: 1)
+    static constexpr size_t VRAM_SIZE  = VRAM_BANK_SIZE * VRAM_BANKS;
     static constexpr size_t OAM_SIZE   = 160;    // 160 bytes
     static constexpr size_t HRAM_SIZE  = 127;    // 127 bytes
     static constexpr size_t IO_SIZE    = 128;    // 128 bytes
@@ -70,9 +74,15 @@ public:
     // Direct memory access (for debugging/testing)
     u8* GetWRAM() { return m_wram.data(); }
     u8* GetVRAM() { return m_vram.data(); }
+    u8* GetVRAMBank(u32 bank) { return m_vram.data() + bank * VRAM_BANK_SIZE; }
     u8* GetOAM() { return m_oam.data(); }
     u8* GetHRAM() { return m_hram.data(); }
     MBC* GetMBC() { return m_mbc.get(); }
+
+    // CGB mode enables the VBK (0xFF4F) and SVBK (0xFF70) banking registers
+    void SetCGBMode(bool enabled) { m_cgb_mode = enabled; }
+    bool IsCGBMode() const { return m_cgb_mode; }
+    u8 GetVRAMBankIndex() const { return m_vram_bank; }
 
     // Reset memory
     void Reset();
@@ -106,8 +116,19 @@ private:
     std::unique_ptr<MBC> m_mbc;
     bool m_has_battery = false;
 
+    // CGB banking state
+    bool m_cgb_mode = false;
+    u8 m_vram_bank = 0;   // VBK: 0-1
+    u8 m_wram_bank = 1;   // SVBK: 1-7 (0 maps to 1)
+
     // Initialize page tables
     void InitializePageTables();
+
+    // Remap the switchable VRAM/WRAM pages after a bank change
+    void UpdateBankedPageTables();
+
+    // VBK/SVBK register handlers
+    void RegisterBankingHandlers();
 
     // Slow path handlers for I/O and unmapped regions
     u8 ReadIO(u16 address) const;
