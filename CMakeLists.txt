@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(dmwss VERSION 1.1.4 LANGUAGES CXX)
+project(dmwss VERSION 1.1.5 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -120,11 +120,15 @@ if(UNIX AND NOT APPLE AND NOT ANDROID)
 endif()
 
 # Android packaging: point androiddeployqt at the manifest/icons and
-# build every ABI Qt was installed for
+# build every ABI Qt was installed for.
+# qt6_android_add_apk_target() is required to get the "<target>_make_apk"
+# custom target at all - it's only created automatically for targets
+# built with qt_add_executable(), and dmwss uses plain add_executable().
 if(ANDROID)
     set_target_properties(dmwss PROPERTIES
         QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/android
     )
+    qt6_android_add_apk_target(dmwss)
 endif()
 
 # Tests - headless blargg test ROM runner
