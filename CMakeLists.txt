@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(dmwss VERSION 1.1.5 LANGUAGES CXX)
+project(dmwss VERSION 1.1.6 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -82,7 +82,13 @@ file(GLOB_RECURSE UI_SOURCES
     "src/platform/*.hpp"
 )
 
-add_executable(dmwss src/main.cpp ${UI_SOURCES} shaders/shaders.qrc)
+# qt_add_executable() (not plain add_executable()) is required for Android:
+# Android apps can't run a native ELF executable directly, so on that
+# platform this macro builds dmwss as a shared library instead (loaded via
+# JNI by QtActivity) and auto-registers the "dmwss_make_apk" packaging
+# target through CMake's deferred finalization. On every other platform it
+# behaves exactly like add_executable().
+qt_add_executable(dmwss src/main.cpp ${UI_SOURCES} shaders/shaders.qrc)
 
 # Package as a proper .app bundle on macOS so macdeployqt can produce a
 # self-contained, double-clickable application
@@ -119,16 +125,13 @@ if(UNIX AND NOT APPLE AND NOT ANDROID)
     )
 endif()
 
-# Android packaging: point androiddeployqt at the manifest/icons and
-# build every ABI Qt was installed for.
-# qt6_android_add_apk_target() is required to get the "<target>_make_apk"
-# custom target at all - it's only created automatically for targets
-# built with qt_add_executable(), and dmwss uses plain add_executable().
+# Android packaging: point androiddeployqt at the manifest/icons. The
+# "dmwss_make_apk" target itself is registered automatically by
+# qt_add_executable()'s deferred finalization - no manual call needed.
 if(ANDROID)
     set_target_properties(dmwss PROPERTIES
         QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/android
     )
-    qt6_android_add_apk_target(dmwss)
 endif()
 
 # Tests - headless blargg test ROM runner
