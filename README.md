@@ -108,7 +108,7 @@ Requires a Qt6 install for Android (`android_arm64_v8a`) *and* a matching host Q
 cmake -B build-android -S . \
   -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI=arm64-v8a \
-  -DANDROID_PLATFORM=android-24 \
+  -DANDROID_PLATFORM=android-28 \
   -DQT_HOST_PATH=/path/to/host/Qt/6.8.2/gcc_64 \
   -DCMAKE_PREFIX_PATH=/path/to/android/Qt/6.8.2/android_arm64_v8a \
   -DCMAKE_BUILD_TYPE=Release -DDMWSS_NATIVE=OFF

@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           package="org.dmwss.emulator"
-          android:versionName="1.1.6"
+          android:versionName="1.1.7"
           android:versionCode="1"
           android:installLocation="auto">
 
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34"/>
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
 
     <!-- Used by the TCP link cable feature to host/connect over the network -->
     <uses-permission android:name="android.permission.INTERNET"/>
