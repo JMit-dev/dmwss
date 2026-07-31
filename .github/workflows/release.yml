@@ -208,8 +208,16 @@ jobs:
         echo "Host Qt:    $HOST_QT"
         echo "Android Qt: $ANDROID_QT"
 
+        # The raw NDK toolchain file sets CMAKE_FIND_ROOT_PATH_MODE_PACKAGE
+        # to ONLY, which restricts find_package() to the NDK sysroot and
+        # silently ignores CMAKE_PREFIX_PATH - that's why Qt6 was
+        # unreachable even with the correct path above. Qt6 ships its own
+        # toolchain file that wraps the NDK one and adds the Qt install to
+        # CMAKE_FIND_ROOT_PATH so find_package(Qt6) actually works; this is
+        # also what Qt Creator uses for Android CMake builds.
         cmake -B build-android -S . \
-          -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
+          -DCMAKE_TOOLCHAIN_FILE="$ANDROID_QT/lib/cmake/Qt6/qt.toolchain.cmake" \
+          -DANDROID_NDK_ROOT="$NDK_ROOT" \
           -DANDROID_ABI=${{ env.ANDROID_ABI }} \
           -DANDROID_PLATFORM=${{ env.ANDROID_PLATFORM }} \
           -DQT_HOST_PATH="$HOST_QT" \
