@@ -165,12 +165,14 @@ jobs:
     # Qt6's CMake Android support cross-compiles the app with the
     # Android-target Qt libs, but still needs a matching host (Linux) Qt
     # install to run moc/rcc/uic during the build - hence two installs.
-    # Each is given an id so its exact install path can be read back from
-    # steps.<id>.outputs.qtPath - an explicit per-step output, unlike the
-    # action's QT_ROOT_DIR env var, which gets clobbered the second time
-    # the action runs in the same job.
+    # Neither the action's `qtPath` output nor its QT_ROOT_DIR env var can
+    # be trusted here: the outer jurplel/install-qt-action@v4 composite
+    # action declares no `outputs:` at all (the inner JS step's setOutput
+    # never gets wired up), and QT_ROOT_DIR gets clobbered by the second
+    # install since both run in the same job. So each install dir is
+    # searched directly for Qt6Config.cmake instead - fully self-contained,
+    # no dependency on the action's internal plumbing.
     - name: Install host Qt6
-      id: install-host-qt
       uses: jurplel/install-qt-action@v4
       with:
         version: ${{ env.QT_VERSION }}
@@ -178,7 +180,6 @@ jobs:
         dir: ${{ github.workspace }}/qt-host
 
     - name: Install Qt6 for Android
-      id: install-android-qt
       uses: jurplel/install-qt-action@v4
       with:
         version: ${{ env.QT_VERSION }}
@@ -190,11 +191,22 @@ jobs:
     - name: Configure CMake
       run: |
         NDK_ROOT="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
-        HOST_QT="${{ steps.install-host-qt.outputs.qtPath }}"
-        ANDROID_QT="${{ steps.install-android-qt.outputs.qtPath }}"
+
+        # target=android installs pull in a parallel desktop Qt alongside
+        # the android arch dir (aqtinstall's --autodesktop), so the search
+        # under qt-android must prefer the android_arm64_v8a match.
+        HOST_CONFIG="$(find "$PWD/qt-host" -path '*/lib/cmake/Qt6/Qt6Config.cmake' | head -1)"
+        ANDROID_CONFIG="$(find "$PWD/qt-android" -path '*/lib/cmake/Qt6/Qt6Config.cmake' | grep "${{ env.ANDROID_QT_ARCH }}" | head -1)"
+        if [ -z "$HOST_CONFIG" ] || [ -z "$ANDROID_CONFIG" ]; then
+          echo "Failed to locate Qt6Config.cmake"
+          echo "qt-host contents:"; find "$PWD/qt-host" -maxdepth 3
+          echo "qt-android contents:"; find "$PWD/qt-android" -maxdepth 3
+          exit 1
+        fi
+        HOST_QT="${HOST_CONFIG%/lib/cmake/Qt6/Qt6Config.cmake}"
+        ANDROID_QT="${ANDROID_CONFIG%/lib/cmake/Qt6/Qt6Config.cmake}"
         echo "Host Qt:    $HOST_QT"
         echo "Android Qt: $ANDROID_QT"
-        ls "$HOST_QT/lib/cmake/Qt6" "$ANDROID_QT/lib/cmake/Qt6"
 
         cmake -B build-android -S . \
           -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
