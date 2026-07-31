@@ -163,24 +163,26 @@ jobs:
       run: sdkmanager --install "ndk;${{ env.NDK_VERSION }}"
 
     # Qt6's CMake Android support cross-compiles the app with the
-    # Android-target Qt libs, but still needs a matching host (Linux)
-    # Qt install to run moc/rcc/uic during the build - hence two installs.
-    # Each install-qt-action call exports QT_ROOT_DIR pointing at exactly
-    # where it put things; the host one is saved before the second call
-    # overwrites it.
+    # Android-target Qt libs, but still needs a matching host (Linux) Qt
+    # install to run moc/rcc/uic during the build - hence two installs.
+    # Each is given an id so its exact install path can be read back from
+    # steps.<id>.outputs.qtPath - an explicit per-step output, unlike the
+    # action's QT_ROOT_DIR env var, which gets clobbered the second time
+    # the action runs in the same job.
     - name: Install host Qt6
+      id: install-host-qt
       uses: jurplel/install-qt-action@v4
       with:
         version: ${{ env.QT_VERSION }}
+        host: linux
         dir: ${{ github.workspace }}/qt-host
 
-    - name: Save host Qt path
-      run: echo "HOST_QT_DIR=$QT_ROOT_DIR" >> "$GITHUB_ENV"
-
     - name: Install Qt6 for Android
+      id: install-android-qt
       uses: jurplel/install-qt-action@v4
       with:
         version: ${{ env.QT_VERSION }}
+        host: linux
         target: android
         arch: ${{ env.ANDROID_QT_ARCH }}
         dir: ${{ github.workspace }}/qt-android
@@ -188,13 +190,18 @@ jobs:
     - name: Configure CMake
       run: |
         NDK_ROOT="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
+        HOST_QT="${{ steps.install-host-qt.outputs.qtPath }}"
+        ANDROID_QT="${{ steps.install-android-qt.outputs.qtPath }}"
+        echo "Host Qt:    $HOST_QT"
+        echo "Android Qt: $ANDROID_QT"
+        ls "$HOST_QT/lib/cmake/Qt6" "$ANDROID_QT/lib/cmake/Qt6"
 
         cmake -B build-android -S . \
           -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
           -DANDROID_ABI=${{ env.ANDROID_ABI }} \
           -DANDROID_PLATFORM=${{ env.ANDROID_PLATFORM }} \
-          -DQT_HOST_PATH="$HOST_QT_DIR" \
-          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+          -DQT_HOST_PATH="$HOST_QT" \
+          -DCMAKE_PREFIX_PATH="$ANDROID_QT" \
           -DCMAKE_BUILD_TYPE=Release \
           -DDMWSS_NATIVE=OFF
 
