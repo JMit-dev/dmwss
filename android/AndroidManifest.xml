@@ -23,12 +23,17 @@
         android:hardwareAccelerated="true"
         android:allowBackup="true">
 
-        <!-- Landscape-locked: the touch D-pad/button layout is designed
-             for landscape only -->
+        <!-- Rotates freely with the device. The mobile UI (touch D-pad/
+             buttons, fast-forward toggle, hamburger settings menu) lays
+             itself out relative to the current window size on every
+             resize, so it adapts to both portrait and landscape.
+             "orientation" is listed in configChanges below so Qt gets a
+             resize event on rotation instead of the activity (and its GL
+             context) being torn down and recreated. -->
         <activity
             android:name="org.qtproject.qt.android.bindings.QtActivity"
             android:label="dmwss"
-            android:screenOrientation="landscape"
+            android:screenOrientation="fullSensor"
             android:launchMode="singleTask"
             android:exported="true"
             android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation">

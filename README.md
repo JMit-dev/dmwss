@@ -41,9 +41,10 @@ Prefer a native app? Grab a build from **[Releases](https://github.com/JMit-dev/
 - Link cable emulation over TCP, so two instances (on the same machine or over a network) can trade/connect
 
 **Android**
-- Multitouch on-screen D-pad and buttons, tracked as independent touch points so diagonals and holding a direction plus a face button both work correctly
+- A dedicated touch UI, not a port of the desktop menu bar: multitouch on-screen D-pad and buttons (tracked as independent touch points so diagonals and holding a direction plus a face button both work correctly), a fast-forward toggle top-left, and a hamburger button top-right opening a full-screen settings overlay (open ROM, pause/reset, quick save/load, cheats, mute/volume, palette, and scaling)
+- Rotates freely with the device; the whole touch UI relays out live on every orientation change
+- Pixel-perfect integer scaling by default, with Fit and Stretch also available from the settings overlay
 - ROMs picked through Android's file picker are copied into app-private storage on load, so save files, save states, and cheats all work the same as on desktop
-- Landscape-only for now (the touch layout doesn't have a portrait variant yet)
 
 ## Controls
 

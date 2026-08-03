@@ -27,8 +27,11 @@
 #include "ui/serial_link.hpp"
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QStringList>
 #ifdef Q_OS_ANDROID
 #include "ui/touch_controls.hpp"
+#include "ui/mobile_hud.hpp"
+#include "ui/mobile_menu.hpp"
 #endif
 
 // Framebuffer byte order is R,G,B,A, so as a little-endian u32: 0xAABBGGRR
@@ -66,7 +69,14 @@ public:
         , m_current_slot(1) {
 
         setWindowTitle("DMWSS - Game Boy Emulator v1.1.7");
+#ifdef Q_OS_ANDROID
+        // Open directly in fullscreen (set before show() rather than
+        // calling showFullScreen(), which would show the window itself
+        // here and fight with main()'s later show() call)
+        setWindowState(windowState() | Qt::WindowFullScreen);
+#else
         resize(800, 720);
+#endif
 
         // Create OpenGL widget
         m_gl_widget = new GLWidget(this);
@@ -78,6 +88,33 @@ public:
         // to bind, so unlike desktop this is not user-configurable
         m_touch_controls = new TouchControls(this);
         m_touch_controls->raise();
+
+        // Fast-forward toggle (top-left) and hamburger settings menu
+        // (top-right) - the mobile-exclusive replacement for desktop's
+        // menu bar, which has no room and no real touch affordance here
+        m_mobile_hud = new MobileHud(this);
+        connect(m_mobile_hud, &MobileHud::FastForwardToggled, this, &MainWindow::OnFastForwardChanged);
+        connect(m_mobile_hud, &MobileHud::MenuRequested, this, &MainWindow::OnToggleMobileMenu);
+        m_mobile_hud->raise();
+
+        m_mobile_menu = new MobileMenu(this);
+        m_mobile_menu->hide();
+        connect(m_mobile_menu, &MobileMenu::CloseRequested, this, &MainWindow::OnToggleMobileMenu);
+        connect(m_mobile_menu, &MobileMenu::OpenROMRequested, this, &MainWindow::OnFileOpen);
+        connect(m_mobile_menu, &MobileMenu::PauseRequested, this, &MainWindow::OnPause);
+        connect(m_mobile_menu, &MobileMenu::ResetRequested, this, &MainWindow::OnReset);
+        connect(m_mobile_menu, &MobileMenu::QuickSaveRequested, this, [this]() { OnSaveState(m_current_slot); });
+        connect(m_mobile_menu, &MobileMenu::QuickLoadRequested, this, [this]() { OnLoadState(m_current_slot); });
+        connect(m_mobile_menu, &MobileMenu::MuteToggled, this, &MainWindow::OnToggleMute);
+        connect(m_mobile_menu, &MobileMenu::VolumeChanged, this, &MainWindow::OnVolumeChanged);
+        connect(m_mobile_menu, &MobileMenu::PaletteChangeRequested, this, &MainWindow::OnPaletteChanged);
+        connect(m_mobile_menu, &MobileMenu::ScalingChangeRequested, this, &MainWindow::OnScalingChanged);
+        connect(m_mobile_menu, &MobileMenu::CheatsRequested, this, &MainWindow::OnCheats);
+        m_mobile_menu->raise();
+
+        QStringList palette_names = {"Game Boy Color"};
+        for (int i = 0; i < PALETTE_COUNT; i++) palette_names << PALETTES[i].name;
+        m_mobile_menu->SetPaletteOptions(palette_names);
 #endif
 
         // Create GameBoy instance
@@ -100,9 +137,11 @@ public:
         // Link cable over TCP
         m_serial_link = new SerialLink(m_gameboy->GetSerial(), this);
         connect(m_serial_link, &SerialLink::StatusChanged, this,
-                [this](const QString& status) { statusBar()->showMessage(status, 5000); });
+                [this](const QString& status) { ShowStatus(status, 5000); });
 
+#ifndef Q_OS_ANDROID
         CreateMenus();
+#endif
         LoadSettings();
 
         // Create frame timer (60 FPS at 1x speed)
@@ -129,10 +168,19 @@ protected:
     }
 
 #ifdef Q_OS_ANDROID
+    // Fires on rotation too (orientation is in the manifest's
+    // configChanges, so Qt resizes in place instead of recreating the
+    // activity/GL context) - reflowing every overlay here is what makes
+    // the mobile UI follow the phone's orientation live.
     void resizeEvent(QResizeEvent* event) override {
         QMainWindow::resizeEvent(event);
-        m_touch_controls->setGeometry(m_gl_widget->geometry());
+        const QRect area = m_gl_widget->geometry();
+        m_touch_controls->setGeometry(area);
         m_touch_controls->raise();
+        m_mobile_hud->setGeometry(area);
+        m_mobile_hud->raise();
+        m_mobile_menu->setGeometry(area);
+        m_mobile_menu->raise();
     }
 #endif
 
@@ -177,7 +225,7 @@ private slots:
             LoadCheats();
             m_frame_timer->start(CurrentInterval());
             SetPausedUI(false);
-            statusBar()->showMessage("ROM loaded: " + filename);
+            ShowStatus("ROM loaded: " + filename);
         } else {
             QMessageBox::critical(this, "Error", "Failed to load ROM");
         }
@@ -187,11 +235,11 @@ private slots:
         if (m_frame_timer->isActive()) {
             m_frame_timer->stop();
             SetPausedUI(true);
-            statusBar()->showMessage("Paused");
+            ShowStatus("Paused");
         } else {
             m_frame_timer->start(CurrentInterval());
             SetPausedUI(false);
-            statusBar()->showMessage("Running");
+            ShowStatus("Running");
         }
     }
 
@@ -199,16 +247,16 @@ private slots:
         if (m_gameboy->IsRunning()) {
             m_gameboy->Reset();
             spdlog::info("System reset");
-            statusBar()->showMessage("System reset", 2000);
+            ShowStatus("System reset", 2000);
         }
     }
 
     void OnSaveState(int slot) {
         if (m_gameboy->SaveStateToFile(slot)) {
             m_current_slot = slot;
-            statusBar()->showMessage(QString("State saved to slot %1").arg(slot), 2000);
+            ShowStatus(QString("State saved to slot %1").arg(slot), 2000);
         } else {
-            statusBar()->showMessage("Failed to save state", 2000);
+            ShowStatus("Failed to save state", 2000);
         }
     }
 
@@ -216,17 +264,21 @@ private slots:
         if (m_gameboy->LoadStateFromFile(slot)) {
             m_current_slot = slot;
             m_gl_widget->UpdateFramebuffer(m_gameboy->GetFramebuffer(), 160, 144);
-            statusBar()->showMessage(QString("State loaded from slot %1").arg(slot), 2000);
+            ShowStatus(QString("State loaded from slot %1").arg(slot), 2000);
         } else {
-            statusBar()->showMessage(QString("No state in slot %1").arg(slot), 2000);
+            ShowStatus(QString("No state in slot %1").arg(slot), 2000);
         }
     }
 
     void OnToggleMute() {
-        bool muted = m_mute_action->isChecked();
+        bool muted = !m_audio->IsMuted();
         m_audio->SetMuted(muted);
         m_settings.setValue("audio/muted", muted);
-        statusBar()->showMessage(muted ? "Muted" : "Unmuted", 1500);
+        if (m_mute_action) m_mute_action->setChecked(muted);
+#ifdef Q_OS_ANDROID
+        m_mobile_menu->SetMuted(muted);
+#endif
+        ShowStatus(muted ? "Muted" : "Unmuted", 1500);
     }
 
     void OnVolumeChanged(int value) {
@@ -260,9 +312,28 @@ private slots:
         m_settings.setValue("video/scaling", index);
     }
 
+#ifdef Q_OS_ANDROID
+    // Mobile's fast-forward toggle button (top-left HUD button), not tied
+    // to desktop's Speed submenu - always jumps straight to 4x rather than
+    // stepping through 2x/4x/8x, since it's an on/off toggle, not a menu
+    void OnFastForwardChanged(bool active) {
+        m_fast_forward = active;
+        if (m_frame_timer->isActive()) {
+            m_frame_timer->start(CurrentInterval());
+        }
+        ShowStatus(active ? "Fast-forward: on" : "Fast-forward: off", 1000);
+    }
+
+    void OnToggleMobileMenu() {
+        bool show = !m_mobile_menu->isVisible();
+        m_mobile_menu->setVisible(show);
+        if (show) m_mobile_menu->raise();
+    }
+#endif
+
     void OnScreenshot() {
         if (!m_gameboy->IsRunning()) {
-            statusBar()->showMessage("No ROM loaded", 2000);
+            ShowStatus("No ROM loaded", 2000);
             return;
         }
         QString filename = QFileDialog::getSaveFileName(
@@ -272,9 +343,9 @@ private slots:
         QImage image(reinterpret_cast<const uchar*>(m_gameboy->GetFramebuffer()),
                      160, 144, QImage::Format_RGBA8888);
         if (image.save(filename)) {
-            statusBar()->showMessage("Screenshot saved: " + filename, 2000);
+            ShowStatus("Screenshot saved: " + filename, 2000);
         } else {
-            statusBar()->showMessage("Failed to save screenshot", 2000);
+            ShowStatus("Failed to save screenshot", 2000);
         }
     }
 
@@ -293,13 +364,13 @@ private slots:
             for (int i = 0; i < SettingsDialog::BUTTON_COUNT; i++) {
                 m_settings.setValue(QString("input/key%1").arg(i), m_key_bindings[i]);
             }
-            statusBar()->showMessage("Controls updated", 2000);
+            ShowStatus("Controls updated", 2000);
         }
     }
 
     void OnCheats() {
         if (!m_gameboy->IsRunning()) {
-            statusBar()->showMessage("Load a ROM first", 2000);
+            ShowStatus("Load a ROM first", 2000);
             return;
         }
         CheatsDialog dialog(*m_gameboy, this);
@@ -356,12 +427,30 @@ private slots:
 
 private:
     int CurrentInterval() const {
-        // 1x = 16ms (~60 FPS); each speed step halves the interval
-        return 16 >> m_speed_index;
+        // 1x = 16ms (~60 FPS); each speed step halves the interval.
+        // Mobile's fast-forward toggle overrides the desktop speed menu
+        // (which mobile doesn't expose) and pins it to 4x.
+        int index = m_fast_forward ? 2 : m_speed_index;
+        return 16 >> index;
     }
 
     void SetPausedUI(bool paused) {
-        m_pause_action->setText(paused ? "&Resume" : "&Pause");
+        if (m_pause_action) m_pause_action->setText(paused ? "&Resume" : "&Pause");
+#ifdef Q_OS_ANDROID
+        m_mobile_menu->SetPaused(paused);
+#endif
+    }
+
+    // statusBar() only exists in the desktop menu-bar UI; Android's mobile
+    // UI has no status bar, so messages just go to the log there instead
+    void ShowStatus(const QString& message, int timeout_ms = 0) {
+#ifdef Q_OS_ANDROID
+        Q_UNUSED(timeout_ms);
+        spdlog::info("{}", message.toStdString());
+#else
+        if (timeout_ms > 0) statusBar()->showMessage(message, timeout_ms);
+        else statusBar()->showMessage(message);
+#endif
     }
 
     QMenu* BuildStateMenu(const QString& title, bool is_save) {
@@ -513,7 +602,7 @@ private:
         QAction* disconnectAction = linkMenu->addAction("&Disconnect");
         connect(disconnectAction, &QAction::triggered, this, [this]() {
             m_serial_link->Disconnect();
-            statusBar()->showMessage("Link: disconnected", 3000);
+            ShowStatus("Link: disconnected", 3000);
         });
 
         // Tools
@@ -536,33 +625,48 @@ private:
 
         // Audio
         int volume = m_settings.value("audio/volume", 100).toInt();
-        m_volume_slider->setValue(volume);
+        if (m_volume_slider) m_volume_slider->setValue(volume);
         m_audio->SetVolume(volume / 100.0f);
         bool muted = m_settings.value("audio/muted", false).toBool();
-        m_mute_action->setChecked(muted);
+        if (m_mute_action) m_mute_action->setChecked(muted);
         m_audio->SetMuted(muted);
 
         // Video: palette -1 is GBC colorization (menu entry 0, and the
         // default LoadROM applies on its own), 0..N-1 are manual palettes
         int palette = m_settings.value("video/palette", -1).toInt();
         if (palette >= 0 && palette < PALETTE_COUNT) {
-            m_palette_group->actions()[palette + 1]->setChecked(true);
+            if (m_palette_group) m_palette_group->actions()[palette + 1]->setChecked(true);
             m_gameboy->GetPPU().SetDisplayPalette(PALETTES[palette].colors);
-        } else {
+        } else if (m_palette_group) {
             m_palette_group->actions()[0]->setChecked(true);
         }
-        int scaling = m_settings.value("video/scaling", 1).toInt();
-        if (scaling >= 0 && scaling < 3) {
-            m_scaling_group->actions()[scaling]->setChecked(true);
-            m_gl_widget->SetScalingMode(static_cast<GLWidget::ScalingMode>(scaling));
-        }
+
+        // Phones default to pixel-perfect integer scaling (fixed size)
+        // rather than desktop's "fit the window" default - it reads
+        // better on small screens and avoids uneven scaling artifacts
+#ifdef Q_OS_ANDROID
+        constexpr int DEFAULT_SCALING = static_cast<int>(GLWidget::ScalingMode::INTEGER);
+#else
+        constexpr int DEFAULT_SCALING = static_cast<int>(GLWidget::ScalingMode::FIT);
+#endif
+        int scaling = m_settings.value("video/scaling", DEFAULT_SCALING).toInt();
+        if (scaling < 0 || scaling >= 3) scaling = DEFAULT_SCALING;
+        if (m_scaling_group) m_scaling_group->actions()[scaling]->setChecked(true);
+        m_gl_widget->SetScalingMode(static_cast<GLWidget::ScalingMode>(scaling));
 
         // Speed
         int speed = m_settings.value("emulation/speed", 0).toInt();
         if (speed >= 0 && speed < 4) {
-            m_speed_group->actions()[speed]->setChecked(true);
+            if (m_speed_group) m_speed_group->actions()[speed]->setChecked(true);
             m_speed_index = speed;
         }
+
+#ifdef Q_OS_ANDROID
+        m_mobile_menu->SetMuted(muted);
+        m_mobile_menu->SetVolume(volume);
+        m_mobile_menu->SetPaletteIndex(palette);
+        m_mobile_menu->SetScalingIndex(scaling);
+#endif
     }
 
     // Cheats persist per game, keyed by the ROM header title
@@ -656,7 +760,10 @@ private:
     GLWidget* m_gl_widget;
 #ifdef Q_OS_ANDROID
     TouchControls* m_touch_controls = nullptr;
+    MobileHud* m_mobile_hud = nullptr;
+    MobileMenu* m_mobile_menu = nullptr;
 #endif
+    bool m_fast_forward = false;
     QTimer* m_frame_timer;
     QAction* m_pause_action = nullptr;
     QAction* m_mute_action = nullptr;
