@@ -231,6 +231,30 @@ jobs:
     - name: Build APK
       run: cmake --build build-android --target dmwss_make_apk
 
+    # Sign the APK with the release keystore stored in GitHub secrets.
+    # Required secrets: ANDROID_KEYSTORE_BASE64, KEYSTORE_PASSWORD,
+    # KEY_ALIAS, KEY_PASSWORD
+    - name: Sign APK
+      run: |
+        APK=$(find build-android -iname "*.apk" | head -1)
+        if [ -z "$APK" ]; then
+          echo "No APK found to sign"
+          exit 1
+        fi
+
+        echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
+        "$ANDROID_SDK_ROOT/build-tools/$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -1)/apksigner" sign \
+          --ks release.keystore \
+          --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+          --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
+          --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
+          "$APK"
+
+        rm release.keystore
+
+        "$ANDROID_SDK_ROOT/build-tools/$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -1)/apksigner" verify "$APK"
+
     - name: Package APK
       run: |
         APK=$(find build-android -iname "*.apk" | head -1)

@@ -7,7 +7,7 @@
 
 **[▶ Play in your browser](https://jmit-dev.github.io/dmwss/)** — no install, no download.
 
-Prefer a native app? Grab a build from **[Releases](https://github.com/JMit-dev/dmwss/releases)**: an AppImage for Linux, a zip for Windows, a zip for macOS, and an APK for Android. Each is self-contained — unzip (or `chmod +x` the AppImage, or install the APK) and run, no separate Qt install needed.
+Prefer a native app? Grab a build from **[Releases](https://github.com/JMit-dev/dmwss/releases)**: an AppImage for Linux, a zip for Windows, a zip for macOS, and a signed APK for Android. Each is self-contained — unzip (or `chmod +x` the AppImage, or install the APK) and run, no separate Qt install needed.
 
 > The Android build is the newest part of the pipeline and doesn't have the same track record as the other four yet — if a given release is missing the APK, that release's Android build failed in CI (it's allowed to, without blocking the rest) and the next release should have it.
 
