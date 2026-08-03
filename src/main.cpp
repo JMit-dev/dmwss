@@ -68,7 +68,7 @@ public:
         , m_joypad_state(0xFF)
         , m_current_slot(1) {
 
-        setWindowTitle("DMWSS - Game Boy Emulator v1.1.7");
+        setWindowTitle("DMWSS - Game Boy Emulator v1.1.9");
 #ifdef Q_OS_ANDROID
         // Open directly in fullscreen (set before show() rather than
         // calling showFullScreen(), which would show the window itself
@@ -148,7 +148,7 @@ public:
         m_frame_timer = new QTimer(this);
         connect(m_frame_timer, &QTimer::timeout, this, &MainWindow::OnFrameUpdate);
 
-        spdlog::info("DMWSS - Game Boy Emulator v1.1.7");
+        spdlog::info("DMWSS - Game Boy Emulator v1.1.9");
         spdlog::info("Application started successfully");
     }
 
