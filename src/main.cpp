@@ -28,7 +28,7 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QStringList>
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
 #include "ui/touch_controls.hpp"
 #include "ui/mobile_hud.hpp"
 #include "ui/mobile_menu.hpp"
@@ -68,22 +68,38 @@ public:
         , m_joypad_state(0xFF)
         , m_current_slot(1) {
 
-        setWindowTitle("DMWSS - Game Boy Emulator v1.1.9");
+        setWindowTitle("DMWSS - Game Boy Emulator v1.1.10");
+#ifdef DMWSS_MOBILE_UI
 #ifdef Q_OS_ANDROID
         // Open directly in fullscreen (set before show() rather than
         // calling showFullScreen(), which would show the window itself
         // here and fight with main()'s later show() call)
         setWindowState(windowState() | Qt::WindowFullScreen);
 #else
+        // Desktop build with the mobile UI forced on (DMWSS_SIMULATE_MOBILE_UI):
+        // a real window, not fullscreen, so it stays movable/resizable for
+        // iterating on the mobile layout without a device - resizing it
+        // (including going wider-than-tall) exercises the same reflow path
+        // real rotation does on Android.
+        resize(420, 900);
+#endif
+#else
         resize(800, 720);
 #endif
 
         // Create OpenGL widget
         m_gl_widget = new GLWidget(this);
+#ifndef DMWSS_MOBILE_UI
+        // Keeps the desktop window from being shrunk down to something
+        // absurdly small. Mobile has no such floor: the window is always
+        // sized to the device's actual screen, and on a narrow/high-DPI
+        // phone a fixed DIP minimum like this can exceed the screen's real
+        // DIP width, forcing the view to overflow off the edge.
         m_gl_widget->setMinimumSize(160 * 3, 144 * 3);
+#endif
         setCentralWidget(m_gl_widget);
 
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         // Touch controls overlay the game display; there is no keyboard
         // to bind, so unlike desktop this is not user-configurable
         m_touch_controls = new TouchControls(this);
@@ -139,7 +155,7 @@ public:
         connect(m_serial_link, &SerialLink::StatusChanged, this,
                 [this](const QString& status) { ShowStatus(status, 5000); });
 
-#ifndef Q_OS_ANDROID
+#ifndef DMWSS_MOBILE_UI
         CreateMenus();
 #endif
         LoadSettings();
@@ -148,7 +164,7 @@ public:
         m_frame_timer = new QTimer(this);
         connect(m_frame_timer, &QTimer::timeout, this, &MainWindow::OnFrameUpdate);
 
-        spdlog::info("DMWSS - Game Boy Emulator v1.1.9");
+        spdlog::info("DMWSS - Game Boy Emulator v1.1.10");
         spdlog::info("Application started successfully");
     }
 
@@ -167,7 +183,7 @@ protected:
         QMainWindow::keyReleaseEvent(event);
     }
 
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
     // Fires on rotation too (orientation is in the manifest's
     // configChanges, so Qt resizes in place instead of recreating the
     // activity/GL context) - reflowing every overlay here is what makes
@@ -195,7 +211,7 @@ private slots:
 
         if (filename.isEmpty()) return;
 
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         // The Android picker returns a content:// URI, which is readable
         // through Qt's file engine but has no writable sibling directory
         // for .sav/.state files (and often isn't a stable path at all).
@@ -275,7 +291,7 @@ private slots:
         m_audio->SetMuted(muted);
         m_settings.setValue("audio/muted", muted);
         if (m_mute_action) m_mute_action->setChecked(muted);
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         m_mobile_menu->SetMuted(muted);
 #endif
         ShowStatus(muted ? "Muted" : "Unmuted", 1500);
@@ -312,7 +328,7 @@ private slots:
         m_settings.setValue("video/scaling", index);
     }
 
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
     // Mobile's fast-forward toggle button (top-left HUD button), not tied
     // to desktop's Speed submenu - always jumps straight to 4x rather than
     // stepping through 2x/4x/8x, since it's an on/off toggle, not a menu
@@ -327,7 +343,17 @@ private slots:
     void OnToggleMobileMenu() {
         bool show = !m_mobile_menu->isVisible();
         m_mobile_menu->setVisible(show);
-        if (show) m_mobile_menu->raise();
+        if (show) {
+            m_mobile_menu->raise();
+        } else {
+            m_touch_controls->ClearTouches();
+        }
+        // The menu is a full-screen overlay - the D-pad/HUD underneath
+        // would just be dead space behind it (and could still eat clicks
+        // meant for the menu via the HUD's button mask), so hide them
+        // for as long as the menu is open instead of leaving them stacked.
+        m_touch_controls->setVisible(!show);
+        m_mobile_hud->setVisible(!show);
     }
 #endif
 
@@ -410,7 +436,7 @@ private slots:
         // Update joypad state. Bit clear = pressed, so combining keyboard
         // and touch input is a bitwise AND (either source can press).
         u8 effective_state = m_joypad_state;
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         effective_state &= m_touch_controls->State();
 #endif
         m_gameboy->SetJoypadState(effective_state);
@@ -436,7 +462,7 @@ private:
 
     void SetPausedUI(bool paused) {
         if (m_pause_action) m_pause_action->setText(paused ? "&Resume" : "&Pause");
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         m_mobile_menu->SetPaused(paused);
 #endif
     }
@@ -444,7 +470,7 @@ private:
     // statusBar() only exists in the desktop menu-bar UI; Android's mobile
     // UI has no status bar, so messages just go to the log there instead
     void ShowStatus(const QString& message, int timeout_ms = 0) {
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         Q_UNUSED(timeout_ms);
         spdlog::info("{}", message.toStdString());
 #else
@@ -644,7 +670,7 @@ private:
         // Phones default to pixel-perfect integer scaling (fixed size)
         // rather than desktop's "fit the window" default - it reads
         // better on small screens and avoids uneven scaling artifacts
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         constexpr int DEFAULT_SCALING = static_cast<int>(GLWidget::ScalingMode::INTEGER);
 #else
         constexpr int DEFAULT_SCALING = static_cast<int>(GLWidget::ScalingMode::FIT);
@@ -661,7 +687,7 @@ private:
             m_speed_index = speed;
         }
 
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
         m_mobile_menu->SetMuted(muted);
         m_mobile_menu->SetVolume(volume);
         m_mobile_menu->SetPaletteIndex(palette);
@@ -676,7 +702,7 @@ private:
         return "cheats/" + (title.isEmpty() ? "unknown" : title);
     }
 
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
     // Copies a picked ROM (possibly a content:// URI) into app-private
     // storage and returns the local path, or an empty string on failure.
     QString CopyROMToLocalStorage(const QString& source_path) {
@@ -758,7 +784,7 @@ private:
     std::unique_ptr<AudioOutput> m_audio;
     SerialLink* m_serial_link = nullptr;
     GLWidget* m_gl_widget;
-#ifdef Q_OS_ANDROID
+#ifdef DMWSS_MOBILE_UI
     TouchControls* m_touch_controls = nullptr;
     MobileHud* m_mobile_hud = nullptr;
     MobileMenu* m_mobile_menu = nullptr;

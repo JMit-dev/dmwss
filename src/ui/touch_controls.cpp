@@ -1,7 +1,14 @@
 #include "touch_controls.hpp"
 #include <QPainter>
 #include <QTouchEvent>
+#include <QMouseEvent>
 #include <QResizeEvent>
+
+// Sentinel touch-point id for a mouse-driven press (real QTouchEvent point
+// ids are always >= 0). Lets a mouse - which has no touch id of its own -
+// be tracked in the same m_touch_bits map as a single synthetic touch,
+// which is what makes the desktop preview build clickable at all.
+static constexpr int MOUSE_TOUCH_ID = -1;
 
 // Joypad bit masks (0 = pressed): 0=Right 1=Left 2=Up 3=Down
 // 4=A 5=B 6=Select 7=Start
@@ -125,6 +132,30 @@ bool TouchControls::event(QEvent* event) {
             event->accept();
             return true;
         }
+        // Real touchscreens deliver QTouchEvents (handled above), and
+        // accepting those suppresses Qt's usual synthesized-mouse-event
+        // mirroring - so on Android this never runs. It exists so a plain
+        // desktop build (no touchscreen) can still drive the D-pad with a
+        // mouse, e.g. for previewing this UI without an Android device.
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseMove: {
+            auto* mouse_event = static_cast<QMouseEvent*>(event);
+            if (mouse_event->buttons() & Qt::LeftButton) {
+                m_touch_bits[MOUSE_TOUCH_ID] = HitTest(mouse_event->position());
+                RecomputeState();
+                update();
+                event->accept();
+                return true;
+            }
+            return QWidget::event(event);
+        }
+        case QEvent::MouseButtonRelease: {
+            m_touch_bits.remove(MOUSE_TOUCH_ID);
+            RecomputeState();
+            update();
+            event->accept();
+            return true;
+        }
         default:
             return QWidget::event(event);
     }
@@ -134,46 +165,48 @@ void TouchControls::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    const QColor idle(255, 255, 255, 60);
-    const QColor held(255, 255, 255, 130);
-    const QPen outline(QColor(0, 0, 0, 100), 2);
+    const QColor idle_fill(255, 255, 255, 60);
+    const QColor held_fill(140, 210, 255, 200);
+    const QPen idle_pen(QColor(0, 0, 0, 100), 2);
+    const QPen held_pen(QColor(140, 210, 255, 255), 3);
+    constexpr int INSET = 4;
 
-    auto shade = [&](u8 bit) {
-        return (~m_state & bit) ? held : idle;
+    // A held button needs to read as "pressed" at a glance, not just a
+    // faint alpha bump: draw it inset (as if pushed down) with a brighter
+    // fill and a glowing outline. The label stays anchored to the original
+    // (non-inset) rect so it doesn't shift.
+    auto draw_rect = [&](const QRect& rect, u8 bit) {
+        bool held = ~m_state & bit;
+        painter.setPen(held ? held_pen : idle_pen);
+        painter.setBrush(held ? held_fill : idle_fill);
+        painter.drawRect(held ? rect.adjusted(INSET, INSET, -INSET, -INSET) : rect);
+    };
+    auto draw_ellipse = [&](const QRect& rect, u8 bit, const char* label) {
+        bool held = ~m_state & bit;
+        painter.setPen(held ? held_pen : idle_pen);
+        painter.setBrush(held ? held_fill : idle_fill);
+        painter.drawEllipse(held ? rect.adjusted(INSET, INSET, -INSET, -INSET) : rect);
+        painter.drawText(rect, Qt::AlignCenter, label);
+    };
+    auto draw_pill = [&](const QRect& rect, u8 bit, const char* label) {
+        bool held = ~m_state & bit;
+        painter.setPen(held ? held_pen : idle_pen);
+        painter.setBrush(held ? held_fill : idle_fill);
+        painter.drawRoundedRect(held ? rect.adjusted(INSET, INSET, -INSET, -INSET) : rect, 6, 6);
+        painter.drawText(rect, Qt::AlignCenter, label);
     };
 
     // D-pad: a plus/cross shape divided into three columns and three rows
-    painter.setPen(outline);
     int third_w = m_dpad_rect.width() / 3;
     int third_h = m_dpad_rect.height() / 3;
-    QRect up(m_dpad_rect.left() + third_w, m_dpad_rect.top(), third_w, third_h * 2);
-    QRect down(m_dpad_rect.left() + third_w, m_dpad_rect.top() + third_h, third_w, third_h * 2);
-    QRect left(m_dpad_rect.left(), m_dpad_rect.top() + third_h, third_w * 2, third_h);
-    QRect right(m_dpad_rect.left() + third_w, m_dpad_rect.top() + third_h, third_w * 2, third_h);
-
-    painter.setBrush(shade(BIT_UP));
-    painter.drawRect(up);
-    painter.setBrush(shade(BIT_DOWN));
-    painter.drawRect(down);
-    painter.setBrush(shade(BIT_LEFT));
-    painter.drawRect(left);
-    painter.setBrush(shade(BIT_RIGHT));
-    painter.drawRect(right);
+    draw_rect(QRect(m_dpad_rect.left() + third_w, m_dpad_rect.top(), third_w, third_h * 2), BIT_UP);
+    draw_rect(QRect(m_dpad_rect.left() + third_w, m_dpad_rect.top() + third_h, third_w, third_h * 2), BIT_DOWN);
+    draw_rect(QRect(m_dpad_rect.left(), m_dpad_rect.top() + third_h, third_w * 2, third_h), BIT_LEFT);
+    draw_rect(QRect(m_dpad_rect.left() + third_w, m_dpad_rect.top() + third_h, third_w * 2, third_h), BIT_RIGHT);
 
     // Face buttons
-    painter.setBrush(shade(BIT_A));
-    painter.drawEllipse(m_button_a_rect);
-    painter.drawText(m_button_a_rect, Qt::AlignCenter, "A");
-
-    painter.setBrush(shade(BIT_B));
-    painter.drawEllipse(m_button_b_rect);
-    painter.drawText(m_button_b_rect, Qt::AlignCenter, "B");
-
-    painter.setBrush(shade(BIT_SELECT));
-    painter.drawRoundedRect(m_button_select_rect, 6, 6);
-    painter.drawText(m_button_select_rect, Qt::AlignCenter, "SELECT");
-
-    painter.setBrush(shade(BIT_START));
-    painter.drawRoundedRect(m_button_start_rect, 6, 6);
-    painter.drawText(m_button_start_rect, Qt::AlignCenter, "START");
+    draw_ellipse(m_button_a_rect, BIT_A, "A");
+    draw_ellipse(m_button_b_rect, BIT_B, "B");
+    draw_pill(m_button_select_rect, BIT_SELECT, "SELECT");
+    draw_pill(m_button_start_rect, BIT_START, "START");
 }

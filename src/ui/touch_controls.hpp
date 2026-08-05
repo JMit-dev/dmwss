@@ -21,6 +21,16 @@ public:
     // 0=Right 1=Left 2=Up 3=Down 4=A 5=B 6=Select 7=Start
     u8 State() const { return m_state; }
 
+    // Drops all tracked touch points and resets to "nothing held". Needed
+    // when the widget is hidden (e.g. the mobile settings menu covering
+    // it) while a finger is still down - otherwise that touch's bits stay
+    // latched with no TouchEnd ever arriving to clear them.
+    void ClearTouches() {
+        m_touch_bits.clear();
+        m_state = 0xFF;
+        update();
+    }
+
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;

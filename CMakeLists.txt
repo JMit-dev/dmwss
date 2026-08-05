@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(dmwss VERSION 1.1.9 LANGUAGES CXX)
+project(dmwss VERSION 1.1.10 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,6 +8,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Host-CPU tuning is great for local builds but produces binaries that
 # crash on older machines; release packaging turns it off
 option(DMWSS_NATIVE "Optimize for the host CPU (disable for distributable builds)" ON)
+
+# Builds a normal desktop binary with the Android mobile UI (touch controls,
+# fast-forward/hamburger HUD, settings overlay) forced on, so it can be
+# previewed and iterated on with a mouse instead of a full Android
+# build+install cycle. Never used for real releases.
+option(DMWSS_SIMULATE_MOBILE_UI "Desktop build with the Android mobile UI active, for local preview" OFF)
 
 # Optimization flags
 if(MSVC)
@@ -89,6 +95,10 @@ file(GLOB_RECURSE UI_SOURCES
 # target through CMake's deferred finalization. On every other platform it
 # behaves exactly like add_executable().
 qt_add_executable(dmwss src/main.cpp ${UI_SOURCES} shaders/shaders.qrc)
+
+if(ANDROID OR DMWSS_SIMULATE_MOBILE_UI)
+    target_compile_definitions(dmwss PRIVATE DMWSS_MOBILE_UI)
+endif()
 
 # Package as a proper .app bundle on macOS so macdeployqt can produce a
 # self-contained, double-clickable application
